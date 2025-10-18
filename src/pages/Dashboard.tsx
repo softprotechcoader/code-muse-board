@@ -2,12 +2,15 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw } from "lucide-react";
+import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useSocket } from "@/contexts/SocketContext";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import RealtimeActivity from "@/components/RealtimeActivity";
+import RealtimeChat from "@/components/RealtimeChat";
 
 interface NewsItem {
   id: string;
@@ -200,7 +203,9 @@ const Dashboard = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRealtime, setShowRealtime] = useState(false);
   const { toast } = useToast();
+  const { isConnected, userCount, recentNews, requestNewsRefresh } = useSocket();
 
   // Auto-refresh every 5 minutes
   useEffect(() => {
@@ -213,6 +218,10 @@ const Dashboard = () => {
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    // Use real-time refresh if connected
+    if (isConnected) {
+      requestNewsRefresh();
+    }
     // Simulate fetching new data
     setTimeout(() => {
       setIsRefreshing(false);
@@ -237,13 +246,33 @@ const Dashboard = () => {
     setIsGenerating(true);
     setSummary("");
 
-    // Simulated AI summary - will integrate real AI later
-    setTimeout(() => {
+    try {
+      // Call the real AI summarization API
+      const response = await fetch(`http://localhost:3001/api/news/${item.id}/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSummary(data.summary);
+      } else {
+        // Fallback to simple summary if API fails
+        setSummary(
+          `${item.title} represents a significant update in the ${item.category.toLowerCase()} space. ${item.description} This release focuses on developer experience improvements and performance optimizations.`
+        );
+      }
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      // Fallback summary
       setSummary(
         `${item.title} represents a significant update in the ${item.category.toLowerCase()} space. ${item.description} This release focuses on developer experience improvements and performance optimizations.`
       );
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const handleAddToTracker = (item: NewsItem) => {
@@ -276,20 +305,37 @@ const Dashboard = () => {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Latest Tech News</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-3xl font-bold tracking-tight">Latest Tech News</h2>
+              {isConnected ? (
+                <Wifi className="h-5 w-5 text-green-500" />
+              ) : (
+                <WifiOff className="h-5 w-5 text-red-500" />
+              )}
+            </div>
             <p className="text-muted-foreground">
               Stay updated with the latest developments in technology
+              {isConnected && ` • ${userCount} users online`}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-          >
-            <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRealtime(!showRealtime)}
+            >
+              {showRealtime ? "Hide" : "Show"} Real-time
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -439,6 +485,14 @@ const Dashboard = () => {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Real-time Features */}
+      {showRealtime && (
+        <div className="grid gap-6 md:grid-cols-2">
+          <RealtimeActivity />
+          <RealtimeChat />
+        </div>
       )}
     </div>
   );

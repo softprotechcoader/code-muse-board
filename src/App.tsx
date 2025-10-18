@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { SocketProvider } from "@/contexts/SocketContext";
 import Index from "./pages/Index";
 import Tracker from "./pages/Tracker";
 import HistoryPage from "./pages/HistoryPage";
@@ -14,20 +15,22 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/tracker" element={<Layout><Tracker /></Layout>} />
-          <Route path="/skillup" element={<Layout><SkillUp /></Layout>} />
-          <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <SocketProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/tracker" element={<Layout><Tracker /></Layout>} />
+            <Route path="/skillup" element={<Layout><SkillUp /></Layout>} />
+            <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </SocketProvider>
   </QueryClientProvider>
 );
 

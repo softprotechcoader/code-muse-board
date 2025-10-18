@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageSquare, Trash2 } from "lucide-react";
+import { MessageSquare, Trash2, Wifi, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useSocket } from "@/contexts/SocketContext";
 
 interface TrackedItem {
   id: string;
@@ -20,6 +21,7 @@ const Tracker = () => {
   const [items, setItems] = useState<TrackedItem[]>([]);
   const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
   const { toast } = useToast();
+  const { isConnected, userCount, updateReadingProgress } = useSocket();
 
   useEffect(() => {
     loadItems();
@@ -36,6 +38,19 @@ const Tracker = () => {
     );
     setItems(updated);
     localStorage.setItem("trackedItems", JSON.stringify(updated));
+    
+    // Broadcast reading progress update
+    if (isConnected) {
+      const item = updated.find(item => item.id === id);
+      if (item) {
+        updateReadingProgress({
+          itemId: id,
+          title: item.title,
+          status: status,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
     
     if (status === "completed") {
       const history = JSON.parse(localStorage.getItem("history") || "[]");
@@ -104,9 +119,17 @@ const Tracker = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Reading Tracker</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-3xl font-bold tracking-tight">Reading Tracker</h2>
+          {isConnected ? (
+            <Wifi className="h-5 w-5 text-green-500" />
+          ) : (
+            <WifiOff className="h-5 w-5 text-red-500" />
+          )}
+        </div>
         <p className="text-muted-foreground">
           Track your progress and add notes to your readings
+          {isConnected && ` • ${userCount} users online`}
         </p>
       </div>
 
