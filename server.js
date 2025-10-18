@@ -9,18 +9,39 @@ import cors from 'cors';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import cron from 'node-cron';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import compression from 'compression';
+import { PrismaClient } from '@prisma/client';
+import { errorHandler } from './src/middleware/errorHandler.js';
+import newsRoutes from './src/routes/newsRoutes.js';
+import chatRoutes from './src/routes/chatRoutes.js';
+import activityRoutes from './src/routes/activityRoutes.js';
 import { getNews, getNewsById, generateAISummary, generateRandomNews } from './src/services/newsService.js';
 
 const app = express();
 const server = http.createServer(app);
+const prisma = new PrismaClient();
+
+// === Security Middleware ===
+app.use(helmet()); // Adds various HTTP headers for security
+app.use(compression()); // Compress responses
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use('/api', limiter);
 
 // === Middleware ===
-// Enable CORS for all origins (adjust for production!)
+// Enable CORS for development (adjust for production!)
 app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST"]
+  origin: process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : '*',
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // === Swagger/OpenAPI configuration ===

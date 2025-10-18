@@ -1,0 +1,62 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Optional: set a shadow database URL for safe migrations in CI or local dev
+  // Example in .env: SHADOW_DATABASE_URL=postgresql://username:password@localhost:5432/codemuse_shadow
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model News {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  category    String
+  type        NewsType
+  timestamp   DateTime @default(now())
+  read        Boolean  @default(false)
+  summary     String?
+  source      String?
+  url         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  content   String
+  username  String
+  roomId    String
+  timestamp DateTime @default(now())
+}
+
+model ActivityLog {
+  id          String      @id @default(uuid())
+  action      String
+  details     String?
+  category    String
+  importance  Importance  @default(LOW)
+  timestamp   DateTime    @default(now())
+}
+
+enum NewsType {
+  breaking
+  alert
+  update
+}
+
+enum Importance {
+  HIGH
+  MEDIUM
+  LOW
+}
