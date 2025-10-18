@@ -1,3 +1,8 @@
+// src/components/RealtimeChat.tsx
+//
+// Real-time chat component using the SocketContext for live community discussion.
+// Handles joining chat, sending/receiving messages, real-time typing indicators, online user status, and avatars.
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,16 +11,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useSocket } from '@/contexts/SocketContext';
-import { 
-  MessageSquare, 
-  Send, 
-  Users, 
-  Wifi, 
-  WifiOff,
-  Clock
-} from 'lucide-react';
+import { MessageSquare, Send, Users, Wifi, WifiOff, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
+/**
+ * ChatMessage describes a single chat bubble message (from globalComments, etc)
+ */
 interface ChatMessage {
   id: string;
   text: string;
@@ -24,32 +25,42 @@ interface ChatMessage {
   newsId?: string;
 }
 
+/**
+ * For real-time typing indicators (not currently populated from server).
+ */
 interface TypingUser {
   user: string;
   timestamp: string;
 }
 
+/**
+ * RealtimeChat component handles a join-gate for username then presents UI for sending messages,
+ * responding in real-time to server pushes (global comments), and managing typing state.
+ */
 const RealtimeChat = () => {
-  const { 
-    isConnected, 
-    userCount, 
-    globalComments, 
-    addGlobalComment, 
-    startTyping, 
-    stopTyping 
+  const {
+    isConnected, userCount, globalComments, addGlobalComment, startTyping, stopTyping
   } = useSocket();
-  
+  // Message input state
   const [message, setMessage] = useState('');
+  // All displayed chat messages (transformed from globalComments)
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Typing users (optional future logic)
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  // Local typing state
   const [isTyping, setIsTyping] = useState(false);
+  // Username for current session
   const [username, setUsername] = useState('');
+  // Flag for join form
   const [showUsernameInput, setShowUsernameInput] = useState(true);
+  // For scrolling to bottom on new message
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  // Internal timer for typing indicator
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
+  // Recompute chat messages on any globalComments update
   useEffect(() => {
-    // Convert global comments to chat messages
+    // Convert globalComments to messages for display
     const chatMessages: ChatMessage[] = globalComments.map(comment => ({
       id: comment.id,
       text: comment.text,
@@ -57,12 +68,11 @@ const RealtimeChat = () => {
       timestamp: comment.timestamp,
       newsId: comment.newsId
     }));
-
     setMessages(chatMessages);
   }, [globalComments]);
 
+  // Whenever messages change, auto-scroll to the bottom
   useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
     if (scrollAreaRef.current) {
       const scrollElement = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
       if (scrollElement) {
@@ -71,15 +81,20 @@ const RealtimeChat = () => {
     }
   }, [messages]);
 
+  /**
+   * Send the current message, reset input, and emit stop-typing event.
+   */
   const handleSendMessage = () => {
     if (!message.trim() || !username.trim()) return;
-
     addGlobalComment(message, 'general');
     setMessage('');
     stopTyping();
     setIsTyping(false);
   };
 
+  /**
+   * Allow Enter for send/sendMessage.
+   */
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -87,33 +102,36 @@ const RealtimeChat = () => {
     }
   };
 
+  /**
+   * Updates message state and manages typing indicator emission.
+   */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessage(e.target.value);
-
-    // Handle typing indicators
+    // If typing just began, emit event.
     if (!isTyping && e.target.value.trim()) {
       setIsTyping(true);
       startTyping({ newsId: 'general' });
     }
-
-    // Clear existing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
-    // Set new timeout to stop typing
+    // Reset typing timeout
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false);
       stopTyping();
-    }, 1000);
+    }, 1000); // 1 second after last key
   };
 
+  /**
+   * Handles username input join for chat participation.
+   */
   const handleUsernameSubmit = () => {
     if (username.trim()) {
       setShowUsernameInput(false);
     }
   };
 
+  /**
+   * Helper to get 1-2 initials from full name, for fallback avatars.
+   */
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -122,9 +140,10 @@ const RealtimeChat = () => {
       .toUpperCase()
       .slice(0, 2);
   };
-
+  /**
+   * Generates unique color classes for avatar/badge by author name. Simple hash.
+   */
   const getMessageColor = (author: string) => {
-    // Generate a consistent color based on author name
     const colors = [
       'bg-blue-500/10 text-blue-400 border-blue-500/20',
       'bg-green-500/10 text-green-400 border-green-500/20',
@@ -133,11 +152,11 @@ const RealtimeChat = () => {
       'bg-pink-500/10 text-pink-400 border-pink-500/20',
       'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
     ];
-    
     const index = author.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return colors[index % colors.length];
   };
 
+  // --- UI for username join (before chat loads) ---
   if (showUsernameInput) {
     return (
       <Card className="border-border bg-card">
@@ -167,6 +186,7 @@ const RealtimeChat = () => {
     );
   }
 
+  // --- Main chat UI ---
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
@@ -189,7 +209,7 @@ const RealtimeChat = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Messages */}
+        {/* Message area will scroll to latest */}
         <ScrollArea ref={scrollAreaRef} className="h-[300px]">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
@@ -231,15 +251,13 @@ const RealtimeChat = () => {
             </div>
           )}
         </ScrollArea>
-
-        {/* Typing indicators */}
+        {/* Real-time typing indicators (future, if implemented) */}
         {typingUsers.length > 0 && (
           <div className="text-xs text-muted-foreground italic">
             {typingUsers.map(user => user.user).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
           </div>
         )}
-
-        {/* Message input */}
+        {/* Message input bar */}
         <div className="flex gap-2">
           <Input
             placeholder="Type a message..."

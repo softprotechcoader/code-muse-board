@@ -1,3 +1,8 @@
+// src/pages/Tracker.tsx
+//
+// Lets users track their own reading/progress on news items. Supports adding comments, updating statuses,
+// and shares progress in real time with others using SocketContext.
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +13,9 @@ import { MessageSquare, Trash2, Wifi, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 
+/**
+ * Information structure for each tracked item in the reading list.
+ */
 interface TrackedItem {
   id: string;
   title: string;
@@ -17,29 +25,43 @@ interface TrackedItem {
   comments: Array<{ text: string; date: string }>;
 }
 
+/**
+ * Tracker component, manages a personalized set of news/progress items for the user.
+ * Allows status and comments to be updated, syncs via sockets for team/real-time progress.
+ */
 const Tracker = () => {
   const [items, setItems] = useState<TrackedItem[]>([]);
   const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
   const { toast } = useToast();
   const { isConnected, userCount, updateReadingProgress } = useSocket();
 
+  // Loads items from localStorage on mount (persistent user-tracking)
   useEffect(() => {
     loadItems();
   }, []);
 
+  /**
+   * Loads tracked items from browser localStorage
+   */
   const loadItems = () => {
     const tracked = JSON.parse(localStorage.getItem("trackedItems") || "[]");
     setItems(tracked);
   };
 
+  /**
+   * Updates the status (started/inProgress/completed) for a tracked item.
+   * Broadcasts change in real time, and syncs with local & global user state.
+   * Adds to history if completed.
+   * @param {string} id - Item id
+   * @param {string} status - New status
+   */
   const updateStatus = (id: string, status: "started" | "inProgress" | "completed") => {
     const updated = items.map((item) =>
       item.id === id ? { ...item, status } : item
     );
     setItems(updated);
     localStorage.setItem("trackedItems", JSON.stringify(updated));
-    
-    // Broadcast reading progress update
+    // Broadcast as real-time update (if connected)
     if (isConnected) {
       const item = updated.find(item => item.id === id);
       if (item) {
@@ -51,7 +73,7 @@ const Tracker = () => {
         });
       }
     }
-    
+    // Add to history if completed
     if (status === "completed") {
       const history = JSON.parse(localStorage.getItem("history") || "[]");
       const completedItem = updated.find(item => item.id === id);
@@ -60,47 +82,38 @@ const Tracker = () => {
         localStorage.setItem("history", JSON.stringify(history));
       }
     }
-    
-    toast({
-      title: "Status Updated",
-      description: `Item marked as ${status}`,
-    });
+    toast({ title: "Status Updated", description: `Item marked as ${status}` });
   };
 
+  /**
+   * Handler for adding a comment to a specific tracked item.
+   * @param {string} id - The tracked item's id
+   */
   const addComment = (id: string) => {
-    const comment = commentText[id]?.trim();
-    if (!comment) return;
-
     const updated = items.map((item) =>
       item.id === id
         ? {
             ...item,
             comments: [
-              ...item.comments,
-              { text: comment, date: new Date().toISOString() },
+              ...(item.comments || []),
+              { text: commentText[id] || '', date: new Date().toISOString() },
             ],
           }
         : item
     );
     setItems(updated);
-    localStorage.setItem("trackedItems", JSON.stringify(updated));
-    setCommentText({ ...commentText, [id]: "" });
-    
-    toast({
-      title: "Comment Added",
-      description: "Your comment has been saved.",
-    });
+    localStorage.setItem('trackedItems', JSON.stringify(updated));
+    setCommentText((prev) => ({ ...prev, [id]: '' }));
   };
 
+  /**
+   * Removes a tracked item from the user's reading list.
+   * @param {string} id - Item id to be removed
+   */
   const removeItem = (id: string) => {
-    const updated = items.filter((item) => item.id !== id);
-    setItems(updated);
-    localStorage.setItem("trackedItems", JSON.stringify(updated));
-    
-    toast({
-      title: "Item Removed",
-      description: "Item has been removed from tracker.",
-    });
+    const filtered = items.filter((item) => item.id !== id);
+    setItems(filtered);
+    localStorage.setItem('trackedItems', JSON.stringify(filtered));
   };
 
   const getStatusColor = (status: string) => {
@@ -116,6 +129,7 @@ const Tracker = () => {
     }
   };
 
+  // --- Render ---
   return (
     <div className="space-y-6">
       <div className="space-y-2">

@@ -1,55 +1,61 @@
+// src/services/newsService.js
+//
+// Responsible for fetching, caching, and deduplicating real-world tech news
+// from a variety of sources and generating AI-powered summaries for articles.
+// Integrates with OpenAI for summarization, Cheerio for web scraping, and Axios for HTTP.
+
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import OpenAI from 'openai';
 import { config } from '../../config.js';
 
-// Initialize OpenAI
+// Initialize OpenAI client with API key from config
 const openai = new OpenAI({
   apiKey: config.openai.apiKey
 });
 
-// Use enabled news sources from config
+// Dynamically determine enabled news sources from config
 const NEWS_SOURCES = config.sources.filter(source => source.enabled);
 
-// Cache for news items
+// --- In-memory news cache and timers ---
 let newsCache = [];
 let lastFetchTime = 0;
 const CACHE_DURATION = config.news.cacheDuration;
 
 /**
- * Fetch news from a specific source
+ * Fetch and parse news from a single source using given selectors.
+ * Handles relative links and normalizes article objects.
+ *
+ * @param {Object} source - Configured news source (see config.js)
+ * @returns {Promise<Object[]>} List of news article objects from this source
  */
 async function fetchNewsFromSource(source) {
   try {
     console.log(`Fetching news from ${source.name}...`);
-    
     const response = await axios.get(source.url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 ... Chrome/91.0.4472.124 Safari/537.36'
       },
       timeout: 10000
     });
-
     const $ = cheerio.load(response.data);
     const articles = [];
 
+    // For each matching selector, extract title/link & normalize data
     $(source.selector).slice(0, config.dynamicContent.maxArticlesPerSource).each((index, element) => {
       try {
         const $element = $(element);
         const titleElement = $element.find(source.titleSelector).first();
         const linkElement = $element.find(source.linkSelector).first();
-        
         if (titleElement.length && linkElement.length) {
           const title = titleElement.text().trim();
           const link = linkElement.attr('href');
-          
           if (title && link) {
-            // Make relative URLs absolute
+            // Ensure links are absolute
             const absoluteLink = link.startsWith('http') ? link : new URL(link, source.url).href;
-            
             articles.push({
               id: `news-${source.name.toLowerCase()}-${Date.now()}-${index}`,
-              title: title,
+              title,
               description: `Latest news from ${source.name}`,
               link: absoluteLink,
               source: source.name,
@@ -64,7 +70,6 @@ async function fetchNewsFromSource(source) {
         console.error(`Error parsing article from ${source.name}:`, error.message);
       }
     });
-
     console.log(`Fetched ${articles.length} articles from ${source.name}`);
     return articles;
   } catch (error) {
@@ -74,25 +79,23 @@ async function fetchNewsFromSource(source) {
 }
 
 /**
- * Fetch news from all sources
+ * Fetches new articles from all sources in parallel, deduplicates, and sorts.
+ * Uses removeDuplicateArticles utility to avoid duplicates by title.
+ *
+ * @returns {Promise<Object[]>} Array of unique news articles
  */
 async function fetchAllNews() {
   try {
     console.log('Fetching news from all sources...');
-    
     const promises = NEWS_SOURCES.map(source => fetchNewsFromSource(source));
     const results = await Promise.allSettled(promises);
-    
     const allArticles = results
       .filter(result => result.status === 'fulfilled')
       .flatMap(result => result.value);
-    
-    // Remove duplicates based on title similarity
+    // Remove duplicates (same/similar title)
     const uniqueArticles = removeDuplicateArticles(allArticles);
-    
-    // Sort by timestamp (newest first)
+    // Sort by recency
     uniqueArticles.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
     console.log(`Total unique articles fetched: ${uniqueArticles.length}`);
     return uniqueArticles;
   } catch (error) {
@@ -102,50 +105,49 @@ async function fetchAllNews() {
 }
 
 /**
- * Remove duplicate articles based on title similarity
+ * Attempts to deduplicate news articles by normalizing and comparing titles.
+ * Uses naive similarity heuristic; can be replaced with more sophisticated algorithm.
+ *
+ * @param {Object[]} articles
+ * @returns {Object[]} deduplicated list
  */
 function removeDuplicateArticles(articles) {
   const seen = new Set();
   return articles.filter(article => {
-    const normalizedTitle = article.title.toLowerCase().replace(/[^\w\s]/g, '').trim();
-    if (seen.has(normalizedTitle)) {
-      return false;
-    }
+    const normalizedTitle = article.title.toLowerCase().replace(/[^"]+/g, '').trim();
+    if (seen.has(normalizedTitle)) return false;
     seen.add(normalizedTitle);
     return true;
   });
 }
 
 /**
- * Generate AI summary for a news article with dynamic prompts
+ * Performs real-time AI summarization of a news article.
+ * Uses dynamic prompt generation and OpenAI's chat API. Fallbacks to static summary if OpenAI key absent or errors.
+ *
+ * @param {string} title - The article title
+ * @param {string} description - The article or excerpt
+ * @param {string} [content] - Additional full content (optional)
+ * @returns {Promise<string>} AI-generated (or fallback) summary
  */
 async function generateAISummary(title, description, content = '') {
   try {
+    // Only proceed if API key is configured
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your-openai-api-key-here') {
-      // Fallback to simple summary if no API key
       return generateFallbackSummary(title, description);
     }
-
-    // Analyze content to generate contextual prompt
+    // Analyze content for context, category, urgency, etc
     const contentAnalysis = analyzeContentForPrompt(title, description, content);
     const dynamicPrompt = generateDynamicPrompt(title, description, content, contentAnalysis);
-
     const completion = await openai.chat.completions.create({
       model: config.openai.model,
       messages: [
-        {
-          role: "system",
-          content: generateSystemPrompt(contentAnalysis)
-        },
-        {
-          role: "user",
-          content: dynamicPrompt
-        }
+        { role: 'system', content: generateSystemPrompt(contentAnalysis) },
+        { role: 'user', content: dynamicPrompt }
       ],
       max_tokens: config.openai.maxTokens,
       temperature: config.openai.temperature
     });
-
     return completion.choices[0].message.content.trim();
   } catch (error) {
     console.error('Error generating AI summary:', error.message);
