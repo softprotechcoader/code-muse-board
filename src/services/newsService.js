@@ -7,9 +7,11 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import OpenAI from 'openai';
+import { PrismaClient } from '@prisma/client';
 import { config } from '../../config.js';
 
-// Initialize OpenAI client with API key from config
+// Initialize Prisma and OpenAI clients
+const prisma = new PrismaClient();
 const openai = new OpenAI({
   apiKey: config.openai.apiKey
 });
@@ -17,9 +19,9 @@ const openai = new OpenAI({
 // Dynamically determine enabled news sources from config
 const NEWS_SOURCES = config.sources.filter(source => source.enabled);
 
-// --- In-memory news cache and timers ---
-let newsCache = [];
-let lastFetchTime = 0;
+import { saveNews, getLatestNews, markNewsAsRead } from './db/newsRepository.js';
+
+// Cache duration for fetching news
 const CACHE_DURATION = config.news.cacheDuration;
 
 /**
@@ -465,20 +467,39 @@ function generateDynamicInsights(title, description, category) {
 }
 
 /**
- * Get cached news or fetch new ones
+ * Get news from database or fetch new ones
  */
 async function getNews() {
   const now = Date.now();
+  const lastNews = await prisma.news.findFirst({
+    orderBy: { timestamp: 'desc' }
+  });
   
-  if (newsCache.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
-    console.log('Returning cached news');
-    return newsCache;
+  if (lastNews && (now - lastNews.timestamp.getTime()) < CACHE_DURATION) {
+    console.log('Returning recent news from database');
+    return await prisma.news.findMany({
+      orderBy: { timestamp: 'desc' },
+      take: 50
+    });
   }
   
   console.log('Fetching fresh news...');
   const freshNews = await fetchAllNews();
-  newsCache = freshNews;
-  lastFetchTime = now;
+  
+  // Store new articles in database
+  for (const article of freshNews) {
+    await prisma.news.create({
+      data: {
+        title: article.title,
+        description: article.description || '',
+        category: article.category || 'general',
+        type: article.type || 'update',
+        source: article.source,
+        url: article.url,
+        summary: article.summary
+      }
+    });
+  }
   
   return freshNews;
 }
