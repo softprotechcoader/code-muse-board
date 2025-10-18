@@ -21,100 +21,176 @@ interface NewsItem {
   date: string;
 }
 
-const categories = ["All", "Framework", "Language", "Build Tool", "AI/ML", "Database", "Cloud", "DevOps", "Security", "Mobile"];
+const categories = ["All", "Framework", "Language", "Build Tool", "AI/ML", "Database", "Cloud", "DevOps", "Security", "Mobile", "Backend", "Frontend"];
 
-const mockNews: NewsItem[] = [
-  {
-    id: "1",
-    title: "React 19 Released",
-    description: "React 19 brings new features including automatic batching, transitions API, and improved suspense.",
-    link: "https://react.dev",
-    docs: "https://react.dev/docs",
-    github: "https://github.com/facebook/react",
-    tutorial: "https://react.dev/learn",
-    category: "Framework",
-    date: "2025-10-18",
-  },
-  {
-    id: "2",
-    title: "TypeScript 5.8 Announcement",
-    description: "TypeScript 5.8 introduces new type system features and improved performance optimizations.",
-    link: "https://typescriptlang.org",
-    docs: "https://www.typescriptlang.org/docs/",
-    github: "https://github.com/microsoft/TypeScript",
-    category: "Language",
-    date: "2025-10-18",
-  },
-  {
-    id: "3",
-    title: "Vite 6.0 Launch",
-    description: "Vite 6.0 offers faster build times and improved HMR with better plugin ecosystem.",
-    link: "https://vitejs.dev",
-    docs: "https://vitejs.dev/guide/",
-    github: "https://github.com/vitejs/vite",
-    tutorial: "https://vitejs.dev/guide/why.html",
-    category: "Build Tool",
-    date: "2025-10-18",
-  },
-  {
-    id: "4",
-    title: "GPT-5 Model Preview",
-    description: "OpenAI announces GPT-5 with improved reasoning capabilities and multimodal understanding.",
-    link: "https://openai.com",
-    docs: "https://platform.openai.com/docs",
-    github: "https://github.com/openai",
-    category: "AI/ML",
-    date: "2025-10-17",
-  },
-  {
-    id: "5",
-    title: "PostgreSQL 17 Major Release",
-    description: "PostgreSQL 17 introduces performance improvements and new JSON features.",
-    link: "https://postgresql.org",
-    docs: "https://www.postgresql.org/docs/",
-    github: "https://github.com/postgres/postgres",
-    category: "Database",
-    date: "2025-10-17",
-  },
-  {
-    id: "6",
-    title: "AWS Lambda Updates",
-    description: "AWS Lambda now supports custom runtimes and improved cold start performance.",
-    link: "https://aws.amazon.com/lambda",
-    docs: "https://docs.aws.amazon.com/lambda/",
-    category: "Cloud",
-    date: "2025-10-16",
-  },
-  {
-    id: "7",
-    title: "Docker Desktop 5.0",
-    description: "Docker Desktop 5.0 brings enhanced container management and performance optimizations.",
-    link: "https://docker.com",
-    docs: "https://docs.docker.com/",
-    github: "https://github.com/docker",
-    category: "DevOps",
-    date: "2025-10-16",
-  },
-  {
-    id: "8",
-    title: "OWASP Top 10 2025",
-    description: "Updated security risks for web applications with new threat vectors.",
-    link: "https://owasp.org",
-    docs: "https://owasp.org/www-project-top-ten/",
-    category: "Security",
-    date: "2025-10-15",
-  },
-  {
-    id: "9",
-    title: "React Native 0.75",
-    description: "New architecture improvements and better iOS/Android compatibility.",
-    link: "https://reactnative.dev",
-    docs: "https://reactnative.dev/docs/getting-started",
-    github: "https://github.com/facebook/react-native",
-    category: "Mobile",
-    date: "2025-10-15",
-  },
-];
+// Generate news for multiple dates
+const generateMockNews = (): NewsItem[] => {
+  const today = new Date();
+  const news: NewsItem[] = [];
+  
+  const templates = [
+    {
+      title: "React 19 Released",
+      description: "React 19 brings new features including automatic batching, transitions API, and improved suspense.",
+      link: "https://react.dev",
+      docs: "https://react.dev/docs",
+      github: "https://github.com/facebook/react",
+      category: "Framework",
+    },
+    {
+      title: "Python 3.13 Performance Boost",
+      description: "Python 3.13 introduces major performance improvements with up to 40% faster execution.",
+      link: "https://python.org",
+      docs: "https://docs.python.org/3.13/",
+      github: "https://github.com/python/cpython",
+      category: "Language",
+    },
+    {
+      title: "Java 22 Released",
+      description: "Java 22 brings pattern matching enhancements and preview of string templates.",
+      link: "https://openjdk.org",
+      docs: "https://docs.oracle.com/en/java/",
+      github: "https://github.com/openjdk/jdk",
+      category: "Language",
+    },
+    {
+      title: "TypeScript 5.8 Announcement",
+      description: "TypeScript 5.8 introduces new type system features and improved performance optimizations.",
+      link: "https://typescriptlang.org",
+      docs: "https://www.typescriptlang.org/docs/",
+      github: "https://github.com/microsoft/TypeScript",
+      category: "Language",
+    },
+    {
+      title: "Vite 6.0 Launch",
+      description: "Vite 6.0 offers faster build times and improved HMR with better plugin ecosystem.",
+      link: "https://vitejs.dev",
+      docs: "https://vitejs.dev/guide/",
+      github: "https://github.com/vitejs/vite",
+      category: "Build Tool",
+    },
+    {
+      title: "GPT-5 Model Preview",
+      description: "OpenAI announces GPT-5 with improved reasoning capabilities and multimodal understanding.",
+      link: "https://openai.com",
+      docs: "https://platform.openai.com/docs",
+      github: "https://github.com/openai",
+      category: "AI/ML",
+    },
+    {
+      title: "PostgreSQL 17 Major Release",
+      description: "PostgreSQL 17 introduces performance improvements and new JSON features.",
+      link: "https://postgresql.org",
+      docs: "https://www.postgresql.org/docs/",
+      github: "https://github.com/postgres/postgres",
+      category: "Database",
+    },
+    {
+      title: "Node.js 22 LTS Released",
+      description: "Node.js 22 becomes LTS with enhanced security and performance improvements.",
+      link: "https://nodejs.org",
+      docs: "https://nodejs.org/docs/",
+      github: "https://github.com/nodejs/node",
+      category: "Backend",
+    },
+    {
+      title: "Angular 18 Update",
+      description: "Angular 18 introduces standalone components by default and improved performance.",
+      link: "https://angular.io",
+      docs: "https://angular.io/docs",
+      github: "https://github.com/angular/angular",
+      category: "Framework",
+    },
+    {
+      title: "Vue 3.5 Release",
+      description: "Vue 3.5 brings reactivity improvements and better TypeScript support.",
+      link: "https://vuejs.org",
+      docs: "https://vuejs.org/guide/",
+      github: "https://github.com/vuejs/core",
+      category: "Framework",
+    },
+    {
+      title: "Go 1.23 Announcement",
+      description: "Go 1.23 includes performance optimizations and new standard library features.",
+      link: "https://go.dev",
+      docs: "https://go.dev/doc/",
+      github: "https://github.com/golang/go",
+      category: "Language",
+    },
+    {
+      title: "Rust 1.80 Stable",
+      description: "Rust 1.80 improves compile times and adds new cargo features.",
+      link: "https://rust-lang.org",
+      docs: "https://doc.rust-lang.org/",
+      github: "https://github.com/rust-lang/rust",
+      category: "Language",
+    },
+    {
+      title: "AWS Lambda Updates",
+      description: "AWS Lambda now supports custom runtimes and improved cold start performance.",
+      link: "https://aws.amazon.com/lambda",
+      docs: "https://docs.aws.amazon.com/lambda/",
+      category: "Cloud",
+    },
+    {
+      title: "Docker Desktop 5.0",
+      description: "Docker Desktop 5.0 brings enhanced container management and performance optimizations.",
+      link: "https://docker.com",
+      docs: "https://docs.docker.com/",
+      github: "https://github.com/docker",
+      category: "DevOps",
+    },
+    {
+      title: "Kubernetes 1.31",
+      description: "Kubernetes 1.31 introduces new security features and improved cluster management.",
+      link: "https://kubernetes.io",
+      docs: "https://kubernetes.io/docs/",
+      github: "https://github.com/kubernetes/kubernetes",
+      category: "DevOps",
+    },
+    {
+      title: "Next.js 15 Released",
+      description: "Next.js 15 brings App Router improvements and better server components support.",
+      link: "https://nextjs.org",
+      docs: "https://nextjs.org/docs",
+      github: "https://github.com/vercel/next.js",
+      category: "Framework",
+    },
+    {
+      title: "TailwindCSS 4.0 Beta",
+      description: "TailwindCSS 4.0 introduces new design tokens and improved performance.",
+      link: "https://tailwindcss.com",
+      docs: "https://tailwindcss.com/docs",
+      github: "https://github.com/tailwindlabs/tailwindcss",
+      category: "Frontend",
+    },
+    {
+      title: "MongoDB 8.0 GA",
+      description: "MongoDB 8.0 brings enhanced query performance and new aggregation features.",
+      link: "https://mongodb.com",
+      docs: "https://www.mongodb.com/docs/",
+      github: "https://github.com/mongodb/mongo",
+      category: "Database",
+    },
+  ];
+
+  // Generate news for the last 7 days
+  templates.forEach((template, index) => {
+    const daysAgo = index % 7;
+    const newsDate = new Date(today);
+    newsDate.setDate(today.getDate() - daysAgo);
+    
+    news.push({
+      id: `news-${index}`,
+      ...template,
+      date: newsDate.toISOString().split('T')[0],
+    });
+  });
+
+  return news;
+};
+
+const mockNews: NewsItem[] = generateMockNews();
 
 const Dashboard = () => {
   const [news, setNews] = useState<NewsItem[]>(mockNews);
@@ -149,7 +225,10 @@ const Dashboard = () => {
 
   const filteredNews = news.filter((item) => {
     const categoryMatch = selectedCategory === "All" || item.category === selectedCategory;
-    const dateMatch = item.date === format(selectedDate, "yyyy-MM-dd");
+    const newsDate = new Date(item.date);
+    const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+    const newsDateOnly = new Date(newsDate.getFullYear(), newsDate.getMonth(), newsDate.getDate());
+    const dateMatch = newsDateOnly.getTime() === selectedDateOnly.getTime();
     return categoryMatch && dateMatch;
   });
 
