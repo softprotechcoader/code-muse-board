@@ -6,16 +6,14 @@
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import { config } from '../../config.js';
+import { aiService } from './aiService.js';
 
-// Initialize Prisma and OpenAI clients
+// Initialize Prisma client
 const prisma = new PrismaClient();
-const openai = new OpenAI({
-  apiKey: config.openai.apiKey
-});
 
+// Technology extraction and analysis is now handled by aiService
 // Dynamically determine enabled news sources from config
 const NEWS_SOURCES = config.sources.filter(source => source.enabled);
 
@@ -486,8 +484,16 @@ async function getNews() {
   console.log('Fetching fresh news...');
   const freshNews = await fetchAllNews();
   
-  // Store new articles in database
+  // Store new articles in database with detailed analysis
   for (const article of freshNews) {
+    // Generate detailed AI analysis
+    const detailedAnalysis = await aiService.generateDetailedAnalysis(article);
+    
+    // Extract technologies mentioned in the article
+    const technologies = aiService.extractTechnologies(article.description);
+    const techStackAnalysis = technologies.length > 0 ? 
+      await aiService.generateTechStackAnalysis(technologies) : null;
+    
     await prisma.news.create({
       data: {
         title: article.title,
@@ -496,7 +502,8 @@ async function getNews() {
         type: article.type || 'update',
         source: article.source,
         url: article.url,
-        summary: article.summary
+        summary: detailedAnalysis,
+        technicalAnalysis: techStackAnalysis
       }
     });
   }
@@ -507,16 +514,26 @@ async function getNews() {
 /**
  * Get a single news item by ID
  */
-function getNewsById(id) {
-  return newsCache.find(item => item.id === id);
+async function getNewsById(id) {
+  try {
+    return await prisma.news.findUnique({
+      where: { id }
+    });
+  } catch (error) {
+    console.error('Error fetching news by ID:', error);
+    return null;
+  }
 }
 
 /**
- * Generate dynamic news item based on current trends and cached data
+ * Generate dynamic news item based on current trends and database data
  */
-function generateRandomNews() {
-  // Get current cached news to base templates on real data
-  const currentNews = newsCache.slice(0, 10); // Use recent news as inspiration
+async function generateRandomNews() {
+  // Get recent news from database to base templates on real data
+  const currentNews = await prisma.news.findMany({
+    take: 10,
+    orderBy: { createdAt: 'desc' }
+  }); // Use recent news as inspiration
   
   // Dynamic news types based on current trends
   const newsTypes = [

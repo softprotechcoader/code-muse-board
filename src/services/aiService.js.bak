@@ -1,0 +1,161 @@
+import OpenAI from 'openai';
+import { config } from '../config/environment.js';
+import { keyManager } from './aiKeyManager.js';
+import { fallbackService } from './aiFallbackService.js';
+import { aiProviders } from './aiProviders.js';
+import { freeAIProviders } from './freeAIProviders.js';
+
+class AIService {
+    constructor() {
+        this.openai = new OpenAI({
+            apiKey: config.openai.apiKeys[0] // Initial key
+        });
+    }
+
+    /**
+     * Extract technology names from article text
+     */
+    extractTechnologies(text) {
+  const techKeywords = [
+    'JavaScript', 'Python', 'Java', 'React', 'Angular', 'Vue', 'Node.js',
+    'TypeScript', 'Docker', 'Kubernetes', 'AWS', 'Azure', 'GraphQL', 'REST',
+    'MongoDB', 'PostgreSQL', 'MySQL', 'Redis', 'Elasticsearch', 'Git',
+    'AI', 'Machine Learning', 'Blockchain', 'IoT', 'Cloud', 'DevOps',
+    'Microservices', 'API', 'Framework', 'Library', 'SDK', 'CLI'
+  ];
+
+  const pattern = new RegExp('\\b(' + techKeywords.join('|') + ')\\b', 'gi');
+  return [...new Set(text.match(pattern) || [])];
+}
+
+import { freeAIProviders } from './freeAIProviders.js';
+
+    async generateDetailedAnalysis(article) {
+  // Try free providers first if enabled
+  if (process.env.USE_FREE_PROVIDERS_FIRST === 'true') {
+    const freeAnalysis = await freeAIProviders.getFreeAnalysis(article);
+    if (freeAnalysis) {
+      return {
+        ...freeAnalysis,
+        technologies: extractTechnologies(article.description)
+      };
+    }
+  }
+
+  // Fallback to OpenAI if free providers fail or are not preferred
+  if (!config.openai?.apiKey) {
+    return generateFallbackAnalysis(article);
+  }
+
+  try {
+    const prompt = `
+Analyze this tech news article and provide a detailed explanation:
+
+Title: ${article.title}
+Content: ${article.description}
+
+Please provide:
+1. Summary: A clear explanation of the news
+2. Technical Impact: How this affects the tech industry
+3. Use Cases: Practical applications and examples
+4. Related Technologies: Connected technologies and frameworks
+5. Key Takeaways: Main points for developers
+6. Future Implications: Potential future impacts
+
+Format the response in markdown.
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: config.openai.model,
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert tech analyst providing detailed explanations of tech news. Focus on practical implications, real-world applications, and technical details."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('Error generating AI analysis:', error);
+    // Check if it's a rate limit error
+    if (error?.response?.status === 429) {
+      console.log('OpenAI API rate limit reached, using fallback analysis');
+    }
+    return generateFallbackAnalysis(article);
+  }
+}
+
+/**
+ * Generate a basic analysis when OpenAI is unavailable
+ */
+function generateFallbackAnalysis(article) {
+  const technologies = extractTechnologies(article.description);
+  
+  return `# ${article.title}
+
+## Summary
+${article.description}
+
+## Technical Details
+${technologies.length > 0 ? `
+### Related Technologies
+${technologies.map(tech => `- ${tech}`).join('\n')}
+
+### Potential Applications
+These technologies are commonly used in:
+${technologies.map(tech => `- ${tech} implementations and integrations`).join('\n')}
+` : 'No specific technologies identified in this article.'}
+
+## Key Points
+- News Category: ${article.category || 'Technology'}
+- Type: ${article.type || 'Update'}
+- Source: ${article.source || 'Not specified'}
+
+*Note: This is an automated summary generated without AI assistance.*`;
+}
+
+export async function generateTechStackAnalysis(technologies) {
+  try {
+    const prompt = `
+Analyze these technologies and provide insights:
+${technologies.join(', ')}
+
+Please provide:
+1. Integration Possibilities
+2. Common Use Cases
+3. Best Practices
+4. Potential Challenges
+5. Alternative Solutions
+
+Format the response in markdown.
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: config.openai.model,
+      messages: [
+        {
+          role: "system",
+          content: "You are a senior software architect providing technical analysis and recommendations."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 800
+    });
+
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('Error generating tech stack analysis:', error);
+    return null;
+  }
+}

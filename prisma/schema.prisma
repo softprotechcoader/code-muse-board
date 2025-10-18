@@ -17,18 +17,19 @@ datasource db {
 }
 
 model News {
-  id          String   @id @default(uuid())
-  title       String
-  description String
-  category    String
-  type        NewsType
-  timestamp   DateTime @default(now())
-  read        Boolean  @default(false)
-  summary     String?
-  source      String?
-  url         String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(uuid())
+  title            String
+  description      String
+  category         String
+  type             NewsType
+  timestamp        DateTime @default(now())
+  read             Boolean  @default(false)
+  summary          String?  @db.Text    // Detailed AI analysis
+  technicalAnalysis String? @db.Text    // Technical stack analysis
+  source           String?
+  url              String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model ChatMessage {
