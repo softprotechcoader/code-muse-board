@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Tracker from "./pages/Tracker";
 import HistoryPage from "./pages/HistoryPage";
+import SkillUp from "./pages/SkillUp";
 import NotFound from "./pages/NotFound";
 import Layout from "./components/Layout";
 
@@ -20,6 +21,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/tracker" element={<Layout><Tracker /></Layout>} />
+          <Route path="/skillup" element={<Layout><SkillUp /></Layout>} />
           <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
