@@ -2,6 +2,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
+import { config } from '../../config.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -9,8 +10,8 @@ const prisma = new PrismaClient();
 // Get all news with pagination
 router.get('/', async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || (config.news && config.news.maxArticles) || 10;
     const skip = (page - 1) * limit;
 
     const [news, total] = await Promise.all([

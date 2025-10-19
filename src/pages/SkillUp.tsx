@@ -236,6 +236,7 @@ const roadmaps: TechRoadmap[] = [
 
 const SkillUp = () => {
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
+  const [aiRoadmap, setAiRoadmap] = useState<string | null>(null);
   const [userProgress, setUserProgress] = useState<{ [key: string]: boolean }>(() => {
     const saved = localStorage.getItem("skillUpProgress");
     return saved ? JSON.parse(saved) : {};
@@ -317,6 +318,16 @@ const SkillUp = () => {
                   <span>{roadmap.estimatedTime}</span>
                 </div>
               </CardContent>
+              {aiRoadmap && (
+                <Card className="mt-4">
+                  <CardHeader>
+                    <CardTitle>AI Generated Roadmap</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="whitespace-pre-wrap text-sm">{aiRoadmap}</pre>
+                  </CardContent>
+                </Card>
+              )}
             </Card>
           );
         })}
@@ -340,6 +351,27 @@ const SkillUp = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex gap-2 mb-2">
+              <Button
+                onClick={async () => {
+                  try {
+                    setAiRoadmap(null);
+                    const res = await fetch('/api/roadmap', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ topic: selectedRoadmap.technology, profile: { level: selectedRoadmap.difficulty, weeks: 6 } })
+                    });
+                    const data = await res.json();
+                    setAiRoadmap(data.content || JSON.stringify(data));
+                  } catch (err) {
+                    setAiRoadmap('Failed to generate AI roadmap');
+                  }
+                }}
+              >
+                Generate with AI
+              </Button>
+              {aiRoadmap && <Badge variant="secondary">AI Roadmap Ready</Badge>}
+            </div>
             {selectedRoadmap.steps.map((step, index) => {
               const isCompleted = userProgress[step.id];
               return (

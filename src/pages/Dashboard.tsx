@@ -7,7 +7,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 import { Calendar } from "@/components/ui/calendar";
@@ -33,7 +34,8 @@ interface NewsItem {
 }
 
 // --- Categories used for manual filtering in the UI ---
-const categories = ["All", "Framework", "Language", "Build Tool", "AI/ML", "Database", "Cloud", "DevOps", "Security", "Mobile", "Backend", "Frontend"];
+// Note: These should match the actual categories from news sources
+const categories = ["All", "Science", "Open Source", "General", "Frontend", "Design", "Backend"];
 
 /**
  * Generates mock news for demonstration or fallback testing. Not used in production fetch path.
@@ -57,7 +59,7 @@ const generateMockNews = (): NewsItem[] => {
 const mockNews: NewsItem[] = generateMockNews();
 
 const Dashboard = () => {
-  const [news, setNews] = useState<NewsItem[]>(mockNews);
+  const [news, setNews] = useState<NewsItem[]>([]);
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
   const [summary, setSummary] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -68,7 +70,22 @@ const Dashboard = () => {
   const [showRealtime, setShowRealtime] = useState(false);
   const { toast } = useToast();
   // --- Socket context integration ---
-  const { isConnected, userCount, requestNewsRefresh } = useSocket();
+  const { isConnected, userCount, requestNewsRefresh, recentNews } = useSocket();
+
+  // Map backend/news item to UI NewsItem shape
+  const mapServerItemToUI = (item: any): NewsItem => {
+    return {
+      id: item.id,
+      title: item.title,
+      description: item.description || '',
+      link: item.url || item.link || '',
+      docs: item.docs || undefined,
+      github: item.github || undefined,
+      tutorial: item.tutorial || undefined,
+      category: item.category || 'General',
+      date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+    };
+  };
 
   // Auto-refresh every 5 minutes
   useEffect(() => {
@@ -78,6 +95,49 @@ const Dashboard = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Load initial news from backend on mount
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('http://localhost:3001/api/news');
+        if (res.ok) {
+          const body = await res.json();
+          // API returns { status, results, totalPages, currentPage, data }
+          const items = Array.isArray(body.data) ? body.data : body;
+          if (mounted && items) {
+            setNews(items.map(mapServerItemToUI));
+          }
+        }
+      } catch (err) {
+        console.error('Error loading initial news:', err);
+      }
+    })();
+    return () => { mounted = false };
+  }, []);
+
+  // Sync with real-time recentNews pushed by socket
+  useEffect(() => {
+    if (recentNews && recentNews.length > 0) {
+      // recentNews may be an array of server-style items
+      try {
+        const mapped = recentNews.map(mapServerItemToUI);
+        setNews(prev => {
+          // Merge newest items in front and dedupe by id
+          const combined = [...mapped, ...prev];
+          const seen = new Set();
+          return combined.filter(item => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          }).slice(0, 50);
+        });
+      } catch (err) {
+        console.error('Error mapping recentNews from socket:', err);
+      }
+    }
+  }, [recentNews]);
 
   /**
    * Handles manual refresh action for news, uses SocketContext if online.
@@ -98,25 +158,33 @@ const Dashboard = () => {
     }, 1000);
   };
 
-  const filteredNews = news.filter((item) => {
-    const categoryMatch = selectedCategory === "All" || item.category === selectedCategory;
-    const newsDate = new Date(item.date);
-    const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-    const newsDateOnly = new Date(newsDate.getFullYear(), newsDate.getMonth(), newsDate.getDate());
-    const dateMatch = newsDateOnly.getTime() === selectedDateOnly.getTime();
-    return categoryMatch && dateMatch;
-  });
+  const filteredNews = (() => {
+    const items = news.filter((item) => {
+      const categoryMatch = selectedCategory === "All" || item.category === selectedCategory;
+      // If item.date is missing or invalid, don't filter it out strictly by date
+      const newsDate = item.date ? new Date(item.date) : null;
+      const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+      const newsDateOnly = newsDate ? new Date(newsDate.getFullYear(), newsDate.getMonth(), newsDate.getDate()) : null;
+      const dateMatch = newsDateOnly ? (newsDateOnly.getTime() === selectedDateOnly.getTime()) : true;
+      return categoryMatch && dateMatch;
+    });
+    // If nothing matches due to strict date, fall back to showing latest items by category only
+    return items.length > 0 ? items : news.filter(i => (selectedCategory === 'All' || i.category === selectedCategory));
+  })();
 
   /**
    * Triggers a call to backend endpoint for OpenAI summarization of an article.
    * If unavailable, falls back on synthetic summary.
    */
   const handleSummarize = async (item: NewsItem) => {
+    console.log('🔍 Summarize clicked for article:', item.id, item.title);
     setSelectedNews(item);
     setIsGenerating(true);
     setSummary("");
 
     try {
+      console.log('📡 Calling API:', `http://localhost:3001/api/news/${item.id}/summarize`);
+      
       // Calls backend endpoint with article id, expects summary in response
       const response = await fetch(`http://localhost:3001/api/news/${item.id}/summarize`, {
         method: 'POST',
@@ -125,23 +193,43 @@ const Dashboard = () => {
         },
       });
 
+      console.log('📥 Response status:', response.status, response.statusText);
+
       if (response.ok) {
         const data = await response.json();
-        setSummary(data.summary);
+        console.log('✅ Received data:', {
+          hasSummary: !!data.summary,
+          summaryLength: data.summary?.length,
+          provider: data.provider,
+          model: data.model,
+          technologies: data.technologies
+        });
+        
+        setSummary(data.summary || 'No summary generated');
+        console.log('✅ Summary set in state');
       } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('❌ API error:', errorData);
+        
         // Show message or use simple fallback logic for summary
-        setSummary(
-          `${item.title} represents a significant update in the ${item.category.toLowerCase()} space. ${item.description} This release focuses on developer experience improvements and performance optimizations.`
-        );
+        const fallbackSummary = `${item.title} represents a significant update in the ${item.category.toLowerCase()} space. ${item.description} This release focuses on developer experience improvements and performance optimizations.`;
+        setSummary(fallbackSummary);
+        console.log('⚠️ Using fallback summary');
       }
     } catch (error) {
-      console.error('Error generating summary:', error);
+      console.error('❌ Error generating summary:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        type: error instanceof Error ? error.constructor.name : typeof error
+      });
+      
       // Show message or use simple fallback logic for summary
-      setSummary(
-        `${item.title} represents a significant update in the ${item.category.toLowerCase()} space. ${item.description} This release focuses on developer experience improvements and performance optimizations.`
-      );
+      const fallbackSummary = `${item.title} represents a significant update in the ${item.category.toLowerCase()} space. ${item.description} This release focuses on developer experience improvements and performance optimizations.`;
+      setSummary(fallbackSummary);
+      console.log('⚠️ Using fallback summary due to error');
     } finally {
       setIsGenerating(false);
+      console.log('✅ Summary generation complete');
     }
   };
 
@@ -336,26 +424,46 @@ const Dashboard = () => {
         </div>
       )}
 
-      {selectedNews && (
-        <Card className="border-primary/20 bg-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              AI Summary: {selectedNews.title}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      {/* AI Summary Dialog */}
+      <Dialog open={!!selectedNews} onOpenChange={(open) => !open && setSelectedNews(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <Sparkles className="h-6 w-6 text-primary" />
+              AI Summary
+            </DialogTitle>
+            <DialogDescription className="text-base font-medium pt-1">
+              {selectedNews?.title}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto pr-2">
             {isGenerating ? (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                Generating summary...
+              <div className="flex flex-col items-center justify-center gap-4 py-12">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                <p className="text-muted-foreground text-lg">Generating AI summary with Azure OpenAI...</p>
               </div>
             ) : (
-              <p className="text-foreground">{summary}</p>
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-muted/30 rounded-lg p-4 border">
+                  {summary}
+                </pre>
+              </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+          
+          {selectedNews && (
+            <div className="flex gap-2 pt-4 border-t">
+              <Badge variant="outline" className="text-xs">
+                {selectedNews.category}
+              </Badge>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {new Date(selectedNews.date).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Real-time Features */}
       {showRealtime && (

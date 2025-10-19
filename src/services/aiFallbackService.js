@@ -1,5 +1,4 @@
 import NodeCache from 'node-cache';
-import { keyManager } from './aiKeyManager.js';
 import { config } from '../config/environment.js';
 
 class AIFallbackService {
@@ -80,4 +79,4 @@ class AIFallbackService {
     }
 }
 
-export const fallbackService = new AIFallbackService();
+// export const fallbackService = new AIFallbackService();

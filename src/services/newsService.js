@@ -92,8 +92,9 @@ async function fetchAllNews() {
     const allArticles = results
       .filter(result => result.status === 'fulfilled')
       .flatMap(result => result.value);
-    // Remove duplicates (same/similar title)
-    const uniqueArticles = removeDuplicateArticles(allArticles);
+  // Remove duplicates (same/similar title)
+  console.log(`Raw articles before dedupe: ${allArticles.length}`);
+  const uniqueArticles = removeDuplicateArticles(allArticles);
     // Sort by recency
     uniqueArticles.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     console.log(`Total unique articles fetched: ${uniqueArticles.length}`);
@@ -114,7 +115,9 @@ async function fetchAllNews() {
 function removeDuplicateArticles(articles) {
   const seen = new Set();
   return articles.filter(article => {
-    const normalizedTitle = article.title.toLowerCase().replace(/[^"]+/g, '').trim();
+    // Normalize by removing punctuation and extra whitespace, keep letters/numbers
+    const normalizedTitle = (article.title || '').toLowerCase().replace(/[^a-z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
+    if (!normalizedTitle) return false;
     if (seen.has(normalizedTitle)) return false;
     seen.add(normalizedTitle);
     return true;
@@ -123,7 +126,7 @@ function removeDuplicateArticles(articles) {
 
 /**
  * Performs real-time AI summarization of a news article.
- * Uses dynamic prompt generation and OpenAI's chat API. Fallbacks to static summary if OpenAI key absent or errors.
+ * Uses aiService with fallback to static summary if errors occur.
  *
  * @param {string} title - The article title
  * @param {string} description - The article or excerpt
@@ -132,23 +135,28 @@ function removeDuplicateArticles(articles) {
  */
 async function generateAISummary(title, description, content = '') {
   try {
-    // Only proceed if API key is configured
-    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your-openai-api-key-here') {
-      return generateFallbackSummary(title, description);
+    console.log('Generating AI summary for:', title);
+    
+    // Use aiService for detailed analysis
+    const article = { title, description, content };
+    const analysisResult = await aiService.generateDetailedAnalysis(article);
+    
+    console.log('AI analysis result received');
+    
+    // Parse the JSON result from aiService
+    const parsed = JSON.parse(analysisResult);
+    
+    // Return the full structured response with topics and use cases
+    if (parsed.content) {
+      return {
+        summary: parsed.content,
+        technologies: parsed.technologies || [],
+        provider: parsed.provider || 'unknown',
+        model: parsed.model || 'unknown'
+      };
     }
-    // Analyze content for context, category, urgency, etc
-    const contentAnalysis = analyzeContentForPrompt(title, description, content);
-    const dynamicPrompt = generateDynamicPrompt(title, description, content, contentAnalysis);
-    const completion = await openai.chat.completions.create({
-      model: config.openai.model,
-      messages: [
-        { role: 'system', content: generateSystemPrompt(contentAnalysis) },
-        { role: 'user', content: dynamicPrompt }
-      ],
-      max_tokens: config.openai.maxTokens,
-      temperature: config.openai.temperature
-    });
-    return completion.choices[0].message.content.trim();
+    
+    return generateFallbackSummary(title, description);
   } catch (error) {
     console.error('Error generating AI summary:', error.message);
     return generateFallbackSummary(title, description);
@@ -391,22 +399,47 @@ function generateFallbackSummary(title, description) {
     'Science': ['science', 'research', 'study', 'discovery', 'experiment']
   };
 
-  // Find the most relevant category
+  // Find the most relevant category and extract technologies
   let detectedCategory = 'General';
   let maxMatches = 0;
+  const technologies = [];
 
   for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    const matches = keywords.filter(keyword => content.includes(keyword)).length;
+    const matchedKeywords = keywords.filter(keyword => content.includes(keyword));
+    const matches = matchedKeywords.length;
     if (matches > maxMatches) {
       maxMatches = matches;
       detectedCategory = category;
     }
+    technologies.push(...matchedKeywords);
   }
 
   // Generate dynamic summary based on detected category and content
   const dynamicInsights = generateDynamicInsights(title, description, detectedCategory);
   
-  return `${dynamicInsights.intro} ${description} ${dynamicInsights.impact} ${dynamicInsights.recommendation}`;
+  const summaryText = `# ${title}
+
+## Summary
+${dynamicInsights.intro} ${description}
+
+## Technical Impact
+${dynamicInsights.impact}
+
+## Use Cases
+${dynamicInsights.useCases}
+
+## Key Takeaways
+${dynamicInsights.recommendation}
+
+**Category:** ${detectedCategory}
+${technologies.length > 0 ? `\n**Related Technologies:** ${[...new Set(technologies)].join(', ')}` : ''}`;
+
+  return {
+    summary: summaryText,
+    technologies: [...new Set(technologies)],
+    provider: 'local-fallback',
+    model: 'heuristic'
+  };
 }
 
 /**
@@ -439,27 +472,50 @@ function generateDynamicInsights(title, description, category) {
   let impact = 'This update focuses on improving developer experience and performance optimizations.';
   
   if (content.includes('breaking') || content.includes('critical') || content.includes('urgent')) {
-    impact = 'This is a critical update that requires immediate attention from developers.';
+    impact = 'This is a critical update that requires immediate attention from developers. It may introduce breaking changes that could affect existing applications.';
   } else if (content.includes('new') || content.includes('release') || content.includes('launch')) {
-    impact = 'This introduces new capabilities and features that developers should explore.';
+    impact = 'This introduces new capabilities and features that developers should explore. It opens up new possibilities for application development.';
   } else if (content.includes('update') || content.includes('improvement') || content.includes('enhancement')) {
-    impact = 'This update brings improvements and optimizations to existing technologies.';
+    impact = 'This update brings improvements and optimizations to existing technologies, potentially improving performance and developer productivity.';
   }
+
+  // Generate use cases based on category
+  const useCases = {
+    'Framework': 'Ideal for building modern web applications, single-page applications (SPAs), and component-based architectures. Perfect for teams looking to improve development speed and code maintainability.',
+    'Language': 'Suitable for various application types including web services, data processing, system programming, and automation scripts. Enhances developer productivity and code quality.',
+    'Build Tool': 'Essential for optimizing build processes, reducing bundle sizes, and improving development workflows. Useful for teams seeking faster build times and better developer experience.',
+    'AI/ML': 'Applicable to intelligent applications, data analytics, predictive modeling, natural language processing, and computer vision projects.',
+    'Database': 'Perfect for applications requiring data persistence, complex queries, real-time analytics, and scalable data solutions.',
+    'Cloud': 'Ideal for scalable applications, microservices architectures, serverless computing, and distributed systems.',
+    'DevOps': 'Essential for continuous integration/deployment pipelines, infrastructure automation, and monitoring solutions.',
+    'Security': 'Critical for securing applications, protecting user data, implementing authentication/authorization, and ensuring compliance.',
+    'Mobile': 'Perfect for cross-platform mobile apps, native mobile development, and progressive web applications.',
+    'Backend': 'Suitable for building APIs, microservices, server-side logic, and data processing systems.',
+    'Frontend': 'Ideal for creating interactive user interfaces, responsive designs, and engaging user experiences.',
+    'Open Source': 'Great opportunity for community collaboration, learning from production-grade code, and contributing to widely-used projects.',
+    'Startup': 'Relevant for technology adoption decisions, market trends analysis, and investment opportunities.',
+    'Technology': 'Applicable across various domains for innovation, digital transformation, and staying current with industry trends.',
+    'Science': 'Useful for research applications, data analysis, scientific computing, and advancing technological understanding.',
+    'General': 'Broadly applicable across different technology domains and use cases.'
+  };
 
   // Dynamic recommendation
   let recommendation = 'Developers should pay attention to this development as it may impact their current projects and future technology choices.';
   
   if (content.includes('security') || content.includes('vulnerability')) {
-    recommendation = 'Immediate action may be required to address security concerns and protect applications.';
+    recommendation = 'Immediate action may be required to address security concerns and protect applications. Review your dependencies and update as needed.';
   } else if (content.includes('performance') || content.includes('optimization')) {
-    recommendation = 'Consider evaluating this update for potential performance improvements in your applications.';
+    recommendation = 'Consider evaluating this update for potential performance improvements in your applications. Run benchmarks to measure impact.';
   } else if (content.includes('breaking') || content.includes('deprecated')) {
-    recommendation = 'Review your current implementations to ensure compatibility with these changes.';
+    recommendation = 'Review your current implementations to ensure compatibility with these changes. Plan migration path if necessary.';
+  } else if (content.includes('new feature') || content.includes('capability')) {
+    recommendation = 'Explore these new features in a development environment to understand their potential value for your projects.';
   }
 
   return {
     intro: intros[category] || intros['General'],
     impact: impact,
+    useCases: useCases[category] || useCases['General'],
     recommendation: recommendation
   };
 }
@@ -485,29 +541,38 @@ async function getNews() {
   const freshNews = await fetchAllNews();
   
   // Store new articles in database with detailed analysis
-  for (const article of freshNews) {
-    // Generate detailed AI analysis
-    const detailedAnalysis = await aiService.generateDetailedAnalysis(article);
-    
-    // Extract technologies mentioned in the article
-    const technologies = aiService.extractTechnologies(article.description);
-    const techStackAnalysis = technologies.length > 0 ? 
-      await aiService.generateTechStackAnalysis(technologies) : null;
-    
-    await prisma.news.create({
-      data: {
-        title: article.title,
-        description: article.description || '',
-        category: article.category || 'general',
-        type: article.type || 'update',
-        source: article.source,
-        url: article.url,
-        summary: detailedAnalysis,
-        technicalAnalysis: techStackAnalysis
-      }
-    });
+  let savedCount = 0;
+  for (const [idx, article] of freshNews.entries()) {
+    try {
+      // Generate detailed AI analysis (returns fallback on error)
+      const detailedAnalysis = await aiService.generateDetailedAnalysis(article);
+
+      // Extract technologies mentioned in the article
+      const technologies = aiService.extractTechnologies(article.description);
+      const techStackAnalysis = technologies.length > 0 ? 
+        await aiService.generateTechStackAnalysis(technologies) : null;
+
+      await prisma.news.create({
+        data: {
+          title: article.title,
+          description: article.description || '',
+          category: article.category || 'general',
+          type: article.type || 'update',
+          source: article.source,
+          url: article.link || article.url || null,
+          summary: typeof detailedAnalysis === 'string' ? detailedAnalysis : JSON.stringify(detailedAnalysis),
+          technicalAnalysis: techStackAnalysis ? (typeof techStackAnalysis === 'string' ? techStackAnalysis : JSON.stringify(techStackAnalysis)) : null
+        }
+      });
+      savedCount++;
+    } catch (err) {
+      console.error(`Error saving article #${idx} (${article.title}):`, err?.message || err);
+      // continue with next article
+    }
   }
-  
+
+  console.log(`Saved ${savedCount} / ${freshNews.length} fetched articles to the database`);
+
   return freshNews;
 }
 

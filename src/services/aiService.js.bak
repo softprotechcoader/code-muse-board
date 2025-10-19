@@ -1,8 +1,5 @@
 import OpenAI from 'openai';
 import { config } from '../config/environment.js';
-import { keyManager } from './aiKeyManager.js';
-import { fallbackService } from './aiFallbackService.js';
-import { aiProviders } from './aiProviders.js';
 import { freeAIProviders } from './freeAIProviders.js';
 
 class AIService {
@@ -33,7 +30,6 @@ import { freeAIProviders } from './freeAIProviders.js';
     async generateDetailedAnalysis(article) {
   // Try free providers first if enabled
   if (process.env.USE_FREE_PROVIDERS_FIRST === 'true') {
-    const freeAnalysis = await freeAIProviders.getFreeAnalysis(article);
     if (freeAnalysis) {
       return {
         ...freeAnalysis,

@@ -1,12 +1,12 @@
 // Configuration file for the application
 export const config = {
-  // OpenAI API Configuration
-  // Get your API key from: https://platform.openai.com/api-keys
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY || 'your-openai-api-key-here',
-    model: 'gpt-3.5-turbo',
-    maxTokens: 300,
-    temperature: 0.7
+  // Azure OpenAI Configuration
+  azureOpenAI: {
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+    modelName: process.env.AZURE_OPENAI_MODEL,
+    deploymentName: process.env.AZURE_OPENAI_DEPLOYMENT,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-04-01-preview'
   },
   
   // Server Configuration
@@ -134,5 +134,22 @@ export const config = {
     maxSummaryLength: 300,
     minSummaryLength: 100,
     enableFallbackSummaries: true
-  }
+  },
+
+  // Anthropic / Claude configuration
+  claude: {
+    enabled: process.env.ENABLE_CLAUDE === 'true' || false,
+    apiKey: process.env.CLAUDE_API_KEY || null,
+    model: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022'
+  },
+
+  // GPT-5 Configuration (OpenAI)
+  gpt5: {
+    enabled: process.env.ENABLE_GPT5 === 'true' || false,
+    apiKey: process.env.GPT5_API_KEY || process.env.OPENAI_API_KEY || null,
+    model: process.env.GPT5_MODEL || 'gpt-5',
+    endpoint: process.env.GPT5_ENDPOINT || 'https://api.openai.com/v1',
+    maxTokens: parseInt(process.env.GPT5_MAX_TOKENS) || 4000,
+    temperature: parseFloat(process.env.GPT5_TEMPERATURE) || 0.7
+  },
 };

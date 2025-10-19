@@ -17,6 +17,7 @@ import { errorHandler } from './src/middleware/errorHandler.js';
 import newsRoutes from './src/routes/newsRoutes.js';
 import chatRoutes from './src/routes/chatRoutes.js';
 import activityRoutes from './src/routes/activityRoutes.js';
+import roadmapRoutes from './src/routes/roadmapRoutes.js';
 import { getNews, getNewsById, generateAISummary, generateRandomNews } from './src/services/newsService.js';
 
 const app = express();
@@ -92,9 +93,69 @@ const swaggerOptions = {
       }
     }
   },
-  apis: ['./server.js'],
+  apis: ['./server.js', './src/routes/*.js'],
 };
-const swaggerSpec = swaggerJsdoc(swaggerOptions);
+let swaggerSpec = swaggerJsdoc(swaggerOptions);
+
+// If swagger-jsdoc failed to parse route JSDoc correctly (empty/malformed paths),
+// provide a small manual spec so the UI is useful.
+if (!swaggerSpec || !swaggerSpec.paths || Object.keys(swaggerSpec.paths).length === 0) {
+  const manualPaths = {
+    '/api/health': {
+      get: {
+        summary: 'Health check',
+        responses: {
+          '200': { description: 'OK' }
+        }
+      }
+    },
+    '/api/news': {
+      get: {
+        summary: 'Get recent news',
+        responses: {
+          '200': {
+            description: 'A list of news items',
+            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/NewsItem' } } } }
+          }
+        }
+      }
+    },
+    '/api/comments': {
+      get: {
+        summary: 'Get recent comments',
+        responses: { '200': { description: 'Array of comments', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Comment' } } } } } }
+      }
+    },
+    '/api/users': {
+      get: {
+        summary: 'Get connected users',
+        responses: { '200': { description: 'Connected users', content: { 'application/json': { schema: { type: 'object' } } } } }
+      }
+    },
+    '/api/news/refresh': {
+      post: {
+        summary: 'Trigger news refresh',
+        responses: { '200': { description: 'Refresh triggered' } }
+      }
+    },
+    '/api/news/{id}/summarize': {
+      post: {
+        summary: 'Generate AI summary for news item',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Generated summary', content: { 'application/json': { schema: { type: 'object' } } } } }
+      }
+    }
+  };
+
+  swaggerSpec = {
+    openapi: '3.0.0',
+    info: swaggerOptions.definition.info,
+    servers: swaggerOptions.definition.servers,
+    paths: manualPaths,
+    components: swaggerOptions.definition.components || {}
+  };
+}
+
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // === In-memory state (shared across all connections) ===
@@ -106,7 +167,32 @@ let allNews = [];                 // Latest complete news cache
 // === REST API Routes ===
 /**
  * @swagger
- * Health check endpoint.
+ * /api/health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns server health status and basic metrics
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: OK
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 uptime:
+ *                   type: number
+ *                   description: Server uptime in seconds
+ *                 connectedUsers:
+ *                   type: number
+ *                   description: Number of connected users
  */
 app.get('/api/health', (req, res) => {
   res.json({
@@ -119,21 +205,21 @@ app.get('/api/health', (req, res) => {
 
 /**
  * @swagger
- * Returns most recent news items (max 50).
- */
-app.get('/api/news', async (req, res) => {
-  try {
-    const news = await getNews();
-    res.json(news.slice(0, 50));
-  } catch (error) {
-    console.error('Error fetching news:', error);
-    res.status(500).json({ error: 'Failed to fetch news' });
-  }
-});
-
-/**
- * @swagger
- * Returns last 50 comments (across all news).
+ * /api/comments:
+ *   get:
+ *     summary: Get recent comments
+ *     description: Returns the last 50 comments across all news articles
+ *     tags:
+ *       - Comments
+ *     responses:
+ *       200:
+ *         description: List of recent comments
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Comment'
  */
 app.get('/api/comments', (req, res) => {
   res.json(globalComments.slice(-50));
@@ -141,7 +227,27 @@ app.get('/api/comments', (req, res) => {
 
 /**
  * @swagger
- * Returns currently connected users.
+ * /api/users:
+ *   get:
+ *     summary: Get connected users
+ *     description: Returns currently connected users via Socket.io
+ *     tags:
+ *       - Users
+ *     responses:
+ *       200:
+ *         description: List of connected users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: number
+ *                   description: Number of connected users
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
  */
 app.get('/api/users', (req, res) => {
   const users = Array.from(connectedUsers.values()).map(user => ({
@@ -154,9 +260,37 @@ app.get('/api/users', (req, res) => {
   });
 });
 
+// Mount API routers (newsRoutes handles /api/news)
+app.use('/api/news', newsRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/roadmap', roadmapRoutes);
+
+
 /**
  * @swagger
- * Manually trigger a news refresh and broadcast new real-time news to all clients.
+ * /api/news/refresh:
+ *   post:
+ *     summary: Manually trigger news refresh
+ *     description: Fetches fresh news and broadcasts new real-time news to all connected clients
+ *     tags:
+ *       - News
+ *     responses:
+ *       200:
+ *         description: News refresh triggered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 newsItem:
+ *                   $ref: '#/components/schemas/NewsItem'
+ *                 totalNews:
+ *                   type: number
+ *       500:
+ *         description: Failed to refresh news
  */
 app.post('/api/news/refresh', async (req, res) => {
   try {
@@ -177,20 +311,78 @@ app.post('/api/news/refresh', async (req, res) => {
 
 /**
  * @swagger
- * Generate an AI summary for a specific news article.
+ * /api/news/{id}/summarize:
+ *   post:
+ *     summary: Generate AI summary for a news article
+ *     description: Uses Azure OpenAI to generate a detailed summary with topics, technical impact, use cases, and key takeaways
+ *     tags:
+ *       - News
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The news article ID
+ *     responses:
+ *       200:
+ *         description: Successfully generated summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 summary:
+ *                   type: string
+ *                   description: Markdown formatted AI-generated summary
+ *                 technologies:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: Related technologies identified
+ *                 provider:
+ *                   type: string
+ *                   description: AI provider used (azure-openai, claude, or local-fallback)
+ *                 model:
+ *                   type: string
+ *                   description: AI model used
+ *                 newsId:
+ *                   type: string
+ *                 title:
+ *                   type: string
+ *       404:
+ *         description: News article not found
+ *       500:
+ *         description: Failed to generate summary
  */
 app.post('/api/news/:id/summarize', async (req, res) => {
   try {
     const { id } = req.params;
-    const newsItem = getNewsById(id);
+    console.log(`Summarize request for article ID: ${id}`);
+    
+    const newsItem = await getNewsById(id);
     if (!newsItem) {
+      console.log(`Article not found: ${id}`);
       return res.status(404).json({ error: 'News article not found' });
     }
-    const summary = await generateAISummary(newsItem.title, newsItem.description);
-    res.json({ summary, newsId: id, title: newsItem.title });
+    
+    console.log(`Generating summary for: ${newsItem.title}`);
+    const summaryResult = await generateAISummary(newsItem.title, newsItem.description || '', newsItem.content || '');
+    
+    // summaryResult is now an object with { summary, technologies, provider, model }
+    res.json({ 
+      summary: summaryResult.summary,
+      technologies: summaryResult.technologies || [],
+      provider: summaryResult.provider || 'unknown',
+      model: summaryResult.model || 'unknown',
+      newsId: id, 
+      title: newsItem.title 
+    });
+    
+    console.log(`Summary generated successfully using ${summaryResult.provider}`);
   } catch (error) {
     console.error('Error generating summary:', error);
-    res.status(500).json({ error: 'Failed to generate summary' });
+    res.status(500).json({ error: 'Failed to generate summary', details: error.message });
   }
 });
 
@@ -346,5 +538,23 @@ server.listen(PORT, async () => {
   console.log(`Real-time server running on port ${PORT}`);
   console.log(`Socket.io server ready for connections`);
   console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
-  await initializeNews();
+  try {
+    await initializeNews();
+  } catch (error) {
+    console.error('Error initializing news:', error);
+  }
+}).on('error', (err) => {
+  console.error('Server error:', err);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
 });
