@@ -28,6 +28,9 @@ model News {
   technicalAnalysis String? @db.Text    // Technical stack analysis
   source           String?
   url              String?
+  docs             String?              // Official documentation URL
+  github           String?              // GitHub repository URL
+  tutorial         String?              // Tutorial/guide URL
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }

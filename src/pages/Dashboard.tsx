@@ -3,7 +3,7 @@
 // Main dashboard for tech news and real-time activity. Shows news feed, provides refresh/summarize actions,
 // and displays real-time data using the SocketContext.
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -145,13 +145,20 @@ const Dashboard = () => {
 
   // Map backend/news item to UI NewsItem shape
   const mapServerItemToUI = (item: any): NewsItem => {
+    const url = item.url || item.link || '';
+    const source = item.source || '';
+    
+    // If source is "GitHub Trending" and github field is empty, use url as github
+    const githubUrl = item.github || 
+      (source === "GitHub Trending" && url.includes('github.com') ? url : undefined);
+    
     return {
       id: item.id,
       title: item.title,
       description: item.description || '',
-      link: item.url || item.link || '',
+      link: url,
       docs: item.docs || undefined,
-      github: item.github || undefined,
+      github: githubUrl,
       tutorial: item.tutorial || undefined,
       category: item.category || 'General',
       date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
@@ -901,7 +908,104 @@ const Dashboard = () => {
         </CardContent>
       </Card>
 
-      {isLoadingNews ? (
+      {/* Conditional Rendering: Show Real-time OR News Cards */}
+      {showRealtime ? (
+        /* Real-time Features with Enhanced Animation */
+        <div className="space-y-4 animate-in slide-in-from-top-4 fade-in duration-500">
+          {/* Real-time Header */}
+          <Card className="border-green-500/30 bg-gradient-to-r from-green-500/5 to-emerald-500/5">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Activity className="h-6 w-6 text-green-500" />
+                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 animate-ping" />
+                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">Real-time Updates</CardTitle>
+                    <CardDescription className="flex items-center gap-2 mt-1">
+                      {isConnected ? (
+                        <>
+                          <Wifi className="h-3 w-3 text-green-500" />
+                          <span className="text-green-500 font-medium">Live • {userCount} users online</span>
+                        </>
+                      ) : (
+                        <>
+                          <WifiOff className="h-3 w-3 text-red-500" />
+                          <span className="text-red-500">Disconnected</span>
+                        </>
+                      )}
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowRealtime(false)}
+                  className="hover:bg-red-500/10"
+                >
+                  <X className="h-4 w-4 text-muted-foreground hover:text-red-500" />
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {/* Real-time Content Grid */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="animate-in slide-in-from-left-4 fade-in duration-500 delay-100">
+              <RealtimeActivity />
+            </div>
+            <div className="animate-in slide-in-from-right-4 fade-in duration-500 delay-200">
+              <RealtimeChat />
+            </div>
+          </div>
+
+          {/* Quick Stats Bar */}
+          <Card className="border-border/50">
+            <CardContent className="py-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-500/10">
+                    <Newspaper className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{recentNews.length}</p>
+                    <p className="text-xs text-muted-foreground">Recent Articles</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-500/10">
+                    <MessageSquare className="h-5 w-5 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{globalComments.length}</p>
+                    <p className="text-xs text-muted-foreground">Comments</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-green-500/10">
+                    <Users className="h-5 w-5 text-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{userCount}</p>
+                    <p className="text-xs text-muted-foreground">Online Users</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-orange-500/10">
+                    <Activity className="h-5 w-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{isConnected ? 'Live' : 'Offline'}</p>
+                    <p className="text-xs text-muted-foreground">Connection</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : isLoadingNews ? (
         <Card className="border-border bg-card">
           <CardContent className="pt-6">
             <div className="flex flex-col items-center justify-center py-12 gap-4">
@@ -998,8 +1102,9 @@ const Dashboard = () => {
                 <div className="pt-4 border-t border-border mt-6">
                   <p className="text-sm text-muted-foreground mb-3">Try exploring these categories:</p>
                   <div className="flex flex-wrap gap-2 justify-center">
-                    {['All', 'Frontend', 'AI & ML', 'Tools', 'Trending'].map((cat) => (
-                      cat !== selectedCategory && (
+                    {['All', 'Frontend', 'AI & ML', 'Tools', 'Trending']
+                      .filter((cat) => cat !== selectedCategory)
+                      .map((cat) => (
                         <Button
                           key={cat}
                           variant="ghost"
@@ -1013,8 +1118,7 @@ const Dashboard = () => {
                         >
                           {cat}
                         </Button>
-                      )
-                    ))}
+                      ))}
                   </div>
                 </div>
               )}
@@ -1023,7 +1127,21 @@ const Dashboard = () => {
         </Card>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredNews.map((item) => {
+          {filteredNews.map((item, index) => {
+            // Debug: Check if GitHub/Docs links exist (first 3 items only)
+            if (index < 3) {
+              const safeTitle = (item && typeof item.title === 'string') ? item.title : 'Untitled';
+              const titlePreview = safeTitle.length > 50 ? safeTitle.substring(0, 50) + '...' : safeTitle;
+              console.log(`📰 Item ${index + 1} - "${titlePreview}":`, {
+                hasGithub: !!item?.github,
+                github: item?.github,
+                hasDocs: !!item?.docs,
+                docs: item?.docs,
+                hasTutorial: !!item?.tutorial,
+                tutorial: item?.tutorial
+              });
+            }
+            
             // Truncate title and description for better card display
             // Add null/undefined checks to prevent errors
             const title = item.title || 'Untitled';
@@ -1106,53 +1224,69 @@ const Dashboard = () => {
               
               {/* GitHub and Official Documentation Links */}
               <div className="grid grid-cols-2 gap-2">
-                {item.github ? (
-                  <Button 
-                    variant="outline" 
-                    size="default"
-                    asChild
-                    className="border-2 border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/10 transition-all group/gh"
-                  >
-                    <a href={item.github} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
-                      <Github className="h-4 w-4 group-hover/gh:scale-110 transition-transform" />
+                <React.Fragment key="github-section">
+                  {item.github ? (
+                    <Button 
+                      variant="outline" 
+                      size="default"
+                      asChild
+                      className="border-2 border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/10 transition-all group/gh"
+                    >
+                      <a href={item.github} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
+                        <Github className="h-4 w-4 group-hover/gh:scale-110 transition-transform" />
+                        <span className="font-medium">GitHub</span>
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button 
+                      variant="outline" 
+                      size="default"
+                      disabled
+                      className="opacity-50 cursor-not-allowed"
+                    >
+                      <Github className="h-4 w-4 mr-2" />
                       <span className="font-medium">GitHub</span>
-                    </a>
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="outline" 
-                    size="default"
-                    disabled
-                    className="opacity-50 cursor-not-allowed"
-                  >
-                    <Github className="h-4 w-4 mr-2" />
-                    <span className="font-medium">GitHub</span>
-                  </Button>
-                )}
+                    </Button>
+                  )}
+                </React.Fragment>
 
-                {item.docs ? (
-                  <Button 
-                    variant="outline" 
-                    size="default"
-                    asChild
-                    className="border-2 border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 transition-all group/docs"
-                  >
-                    <a href={item.docs} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
-                      <BookOpen className="h-4 w-4 group-hover/docs:scale-110 transition-transform" />
+                <React.Fragment key="docs-section">
+                  {item.docs ? (
+                    <Button 
+                      variant="outline" 
+                      size="default"
+                      asChild
+                      className="border-2 border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 transition-all group/docs"
+                    >
+                      <a href={item.docs} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
+                        <BookOpen className="h-4 w-4 group-hover/docs:scale-110 transition-transform" />
+                        <span className="font-medium">Docs</span>
+                      </a>
+                    </Button>
+                  ) : (!item.github && item.link) ? (
+                    <Button 
+                      variant="outline" 
+                      size="default"
+                      asChild
+                      className="border-2 border-border/30 hover:border-border hover:bg-muted/10 transition-all opacity-75"
+                    >
+                      <a href={item.link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
+                        <BookOpen className="h-4 w-4" />
+                        <span className="font-medium">Docs</span>
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button 
+                      variant="outline" 
+                      size="default"
+                      disabled
+                      className="opacity-50 cursor-not-allowed"
+                    >
+                      <BookOpen className="h-4 w-4 mr-2" />
                       <span className="font-medium">Docs</span>
-                    </a>
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="outline" 
-                    size="default"
-                    disabled
-                    className="opacity-50 cursor-not-allowed"
-                  >
-                    <BookOpen className="h-4 w-4 mr-2" />
-                    <span className="font-medium">Docs</span>
-                  </Button>
-                )}
+                    </Button>
+                  )}
+                </React.Fragment>
               </div>
 
               {/* Tutorial Link (if available) - Full Width */}
@@ -1181,17 +1315,36 @@ const Dashboard = () => {
                   <Plus className="h-4 w-4 mr-1" />
                   Track
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  asChild
-                  className="flex-1 hover:bg-primary/10"
-                >
-                  <a href={item.link} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-4 w-4 mr-1" />
-                    Read More
-                  </a>
-                </Button>
+                
+                {/* GitHub Link */}
+                {item.github ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className="flex-1 hover:bg-purple-500/10 hover:text-purple-500"
+                  >
+                    <a href={item.github} target="_blank" rel="noopener noreferrer">
+                      <Github className="h-4 w-4 mr-1" />
+                      GitHub
+                    </a>
+                  </Button>
+                ) : null}
+
+                {/* Docs Link - Only show if docs exists (no fallback here to avoid duplicate) */}
+                {item.docs ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className="flex-1 hover:bg-blue-500/10 hover:text-blue-500"
+                  >
+                    <a href={item.docs} target="_blank" rel="noopener noreferrer">
+                      <BookOpen className="h-4 w-4 mr-1" />
+                      Docs
+                    </a>
+                  </Button>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -1317,6 +1470,7 @@ const Dashboard = () => {
                     li: ({node, ...props}) => <li className="text-foreground leading-relaxed" {...props} />,
                     strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />,
                     em: ({node, ...props}) => <em className="italic text-foreground" {...props} />,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     code: ({node, inline, ...props}: any) => 
                       inline ? (
                         <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props} />
@@ -1348,104 +1502,6 @@ const Dashboard = () => {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Real-time Features with Enhanced Animation */}
-      {showRealtime && (
-        <div className="space-y-4 animate-in slide-in-from-top-4 fade-in duration-500">
-          {/* Real-time Header */}
-          <Card className="border-green-500/30 bg-gradient-to-r from-green-500/5 to-emerald-500/5">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Activity className="h-6 w-6 text-green-500" />
-                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 animate-ping" />
-                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-xl">Real-time Updates</CardTitle>
-                    <CardDescription className="flex items-center gap-2 mt-1">
-                      {isConnected ? (
-                        <>
-                          <Wifi className="h-3 w-3 text-green-500" />
-                          <span className="text-green-500 font-medium">Live • {userCount} users online</span>
-                        </>
-                      ) : (
-                        <>
-                          <WifiOff className="h-3 w-3 text-red-500" />
-                          <span className="text-red-500">Disconnected</span>
-                        </>
-                      )}
-                    </CardDescription>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowRealtime(false)}
-                  className="hover:bg-red-500/10"
-                >
-                  <X className="h-4 w-4 text-muted-foreground hover:text-red-500" />
-                </Button>
-              </div>
-            </CardHeader>
-          </Card>
-
-          {/* Real-time Content Grid */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="animate-in slide-in-from-left-4 fade-in duration-500 delay-100">
-              <RealtimeActivity />
-            </div>
-            <div className="animate-in slide-in-from-right-4 fade-in duration-500 delay-200">
-              <RealtimeChat />
-            </div>
-          </div>
-
-          {/* Quick Stats Bar */}
-          <Card className="border-border/50">
-            <CardContent className="py-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-500/10">
-                    <Newspaper className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{recentNews.length}</p>
-                    <p className="text-xs text-muted-foreground">Recent Articles</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-purple-500/10">
-                    <MessageSquare className="h-5 w-5 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{globalComments.length}</p>
-                    <p className="text-xs text-muted-foreground">Comments</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-green-500/10">
-                    <Users className="h-5 w-5 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{userCount}</p>
-                    <p className="text-xs text-muted-foreground">Online Users</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-orange-500/10">
-                    <Activity className="h-5 w-5 text-orange-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{isConnected ? 'Live' : 'Offline'}</p>
-                    <p className="text-xs text-muted-foreground">Connection</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 };
