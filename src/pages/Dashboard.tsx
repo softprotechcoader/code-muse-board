@@ -17,6 +17,10 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import RealtimeActivity from "@/components/RealtimeActivity";
 import RealtimeChat from "@/components/RealtimeChat";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
+import "../styles/markdown.css";
 
 /**
  * Represents a single news article's shape for the dashboard feed.
@@ -425,16 +429,23 @@ const Dashboard = () => {
       )}
 
       {/* AI Summary Dialog */}
-      <Dialog open={!!selectedNews} onOpenChange={(open) => !open && setSelectedNews(null)}>
+      <Dialog open={!!selectedNews} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedNews(null);
+          setSummary("");
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl">
               <Sparkles className="h-6 w-6 text-primary" />
               AI Summary
             </DialogTitle>
-            <DialogDescription className="text-base font-medium pt-1">
-              {selectedNews?.title}
-            </DialogDescription>
+            {selectedNews && (
+              <DialogDescription className="text-base font-medium pt-1">
+                {selectedNews.title}
+              </DialogDescription>
+            )}
           </DialogHeader>
           
           <div className="flex-1 overflow-y-auto pr-2">
@@ -443,11 +454,35 @@ const Dashboard = () => {
                 <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
                 <p className="text-muted-foreground text-lg">Generating AI summary with Azure OpenAI...</p>
               </div>
-            ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-muted/30 rounded-lg p-4 border">
+            ) : summary ? (
+              <div className="bg-muted/30 rounded-lg p-6 border">
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: ({node, ...props}) => <h1 className="text-2xl font-bold mb-4 text-foreground" {...props} />,
+                    h2: ({node, ...props}) => <h2 className="text-xl font-semibold mb-3 mt-6 text-foreground" {...props} />,
+                    h3: ({node, ...props}) => <h3 className="text-lg font-semibold mb-2 mt-4 text-foreground" {...props} />,
+                    p: ({node, ...props}) => <p className="mb-4 text-foreground leading-relaxed" {...props} />,
+                    ul: ({node, ...props}) => <ul className="list-disc list-inside mb-4 space-y-2 text-foreground" {...props} />,
+                    ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-4 space-y-2 text-foreground" {...props} />,
+                    li: ({node, ...props}) => <li className="text-foreground leading-relaxed" {...props} />,
+                    strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />,
+                    em: ({node, ...props}) => <em className="italic text-foreground" {...props} />,
+                    code: ({node, inline, ...props}: any) => 
+                      inline ? (
+                        <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props} />
+                      ) : (
+                        <code className="block bg-muted p-4 rounded-lg text-sm font-mono text-foreground overflow-x-auto" {...props} />
+                      ),
+                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-primary pl-4 italic my-4 text-muted-foreground" {...props} />,
+                  }}
+                >
                   {summary}
-                </pre>
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-muted-foreground">No summary available</p>
               </div>
             )}
           </div>

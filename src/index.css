@@ -65,3 +65,98 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Markdown Content Styling */
+.markdown-content {
+  @apply text-foreground;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  @apply font-bold text-foreground mt-6 mb-3;
+}
+
+.markdown-content h1 {
+  @apply text-2xl;
+}
+
+.markdown-content h2 {
+  @apply text-xl;
+}
+
+.markdown-content h3 {
+  @apply text-lg;
+}
+
+.markdown-content h4 {
+  @apply text-base;
+}
+
+.markdown-content p {
+  @apply mb-4 leading-relaxed;
+}
+
+.markdown-content strong {
+  @apply font-bold text-primary;
+}
+
+.markdown-content em {
+  @apply italic;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply ml-6 mb-4 space-y-2;
+}
+
+.markdown-content ul {
+  @apply list-disc;
+}
+
+.markdown-content ol {
+  @apply list-decimal;
+}
+
+.markdown-content li {
+  @apply leading-relaxed;
+}
+
+.markdown-content code {
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-primary;
+}
+
+.markdown-content pre {
+  @apply bg-muted p-4 rounded-lg overflow-x-auto mb-4;
+}
+
+.markdown-content pre code {
+  @apply bg-transparent p-0 text-foreground;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-primary pl-4 italic my-4 text-muted-foreground;
+}
+
+.markdown-content a {
+  @apply text-primary hover:underline;
+}
+
+.markdown-content hr {
+  @apply border-border my-6;
+}
+
+.markdown-content table {
+  @apply w-full border-collapse mb-4;
+}
+
+.markdown-content th,
+.markdown-content td {
+  @apply border border-border px-4 py-2;
+}
+
+.markdown-content th {
+  @apply bg-muted font-bold;
+}
+
