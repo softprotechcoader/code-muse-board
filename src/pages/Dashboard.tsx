@@ -7,8 +7,10 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X } from "lucide-react";
+import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 import { Calendar } from "@/components/ui/calendar";
@@ -37,9 +39,32 @@ interface NewsItem {
   date: string;
 }
 
-// --- Categories used for manual filtering in the UI ---
-// Note: These should match the actual categories from news sources
-const categories = ["All", "Science", "Open Source", "General", "Frontend", "Design", "Backend"];
+// --- Hierarchical Tech Categories with Subcategories ---
+const categoryHierarchy = {
+  "All": [],
+  "Trending": [], // Special category for trending tech and tools
+  "Frontend": ["React", "Vue", "Angular", "Next.js", "Svelte", "UI/UX", "CSS", "Tailwind", "JavaScript", "TypeScript", "HTML"],
+  "Backend": ["Node.js", "Python", "Java", "Go", "Rust", "PHP", "Ruby", ".NET", "C++", "Spring Boot", "Django", "FastAPI"],
+  "Database": ["SQL", "NoSQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Cassandra", "DynamoDB", "Oracle", "SQLite"],
+  "AI & ML": ["Machine Learning", "Deep Learning", "NLP", "Computer Vision", "LLM", "ChatGPT", "TensorFlow", "PyTorch", "Data Science"],
+  "Security": ["Cybersecurity", "Hacking", "Penetration Testing", "Ethical Hacking", "Encryption", "Privacy", "Bug Bounty", "Zero Trust"],
+  "DevOps": ["Docker", "Kubernetes", "CI/CD", "Jenkins", "GitHub Actions", "GitLab CI", "Terraform", "Ansible", "Monitoring"],
+  "Cloud": ["AWS", "Azure", "GCP", "Serverless", "Lambda", "Cloud Functions", "Cloud Native", "Multi-Cloud"],
+  "Mobile": ["iOS", "Android", "React Native", "Flutter", "Swift", "Kotlin", "SwiftUI", "Jetpack Compose"],
+  "Web3": ["Blockchain", "Cryptocurrency", "Ethereum", "Bitcoin", "NFT", "Smart Contracts", "Solidity", "DeFi"],
+  "Data": ["Big Data", "Analytics", "Data Engineering", "Apache Spark", "Hadoop", "Data Warehouse", "ETL", "Kafka"],
+  "Architecture": ["Microservices", "Monolith", "Serverless", "Event-Driven", "CQRS", "Domain-Driven Design", "API Gateway"],
+  "Testing": ["Unit Testing", "Integration Testing", "E2E Testing", "Jest", "Pytest", "Selenium", "Cypress", "Test Automation"],
+  "Design": ["UI Design", "UX Design", "Figma", "Design Systems", "Accessibility", "Responsive Design", "Animation"],
+  "Tools": ["Git", "GitHub", "VS Code", "Docker", "Postman", "Linux", "Terminal", "Package Managers"],
+  "Emerging Tech": ["IoT", "Gaming", "AR/VR", "Quantum Computing", "Edge Computing", "5G", "Metaverse"],
+  "General": ["Open Source", "News", "Tutorials", "Career", "Productivity", "Best Practices"]
+};
+
+// Flatten all categories for search/filter
+const allCategories = Object.entries(categoryHierarchy).flatMap(([parent, children]) => 
+  parent === "All" ? [] : [parent, ...children]
+);
 
 /**
  * Generates mock news for demonstration or fallback testing. Not used in production fetch path.
@@ -67,14 +92,28 @@ const Dashboard = () => {
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
   const [summary, setSummary] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoadingNews, setIsLoadingNews] = useState(false);
   // State for selected category filter
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
+  const [categorySearch, setCategorySearch] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined); // undefined = no date filter
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showRealtime, setShowRealtime] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   // --- Socket context integration ---
   const { isConnected, userCount, requestNewsRefresh, recentNews } = useSocket();
+
+  // Global error handler
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      console.error('🚨 Global error caught:', event.error);
+      setError(event.error?.message || 'An unknown error occurred');
+    };
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
 
   // Map backend/news item to UI NewsItem shape
   const mapServerItemToUI = (item: any): NewsItem => {
@@ -100,26 +139,109 @@ const Dashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Load initial news from backend on mount
+  // Load initial news from backend on mount and when filters change
   useEffect(() => {
+    console.log('🚀 useEffect triggered - Starting news fetch');
+    console.log('🚀 Current state:', { selectedCategory, selectedSubcategory, selectedDate });
+    
     let mounted = true;
     (async () => {
+      setIsLoadingNews(true);
       try {
-        const res = await fetch('http://localhost:3001/api/news');
+        // Build query parameters for filtering
+        const params = new URLSearchParams();
+        
+        // Use subcategory if selected, otherwise use main category
+        const categoryToFilter = selectedSubcategory || selectedCategory;
+        
+        console.log('🔧 Filter state:', {
+          selectedCategory,
+          selectedSubcategory,
+          categoryToFilter,
+          selectedDate: selectedDate ? selectedDate.toISOString().split('T')[0] : 'none'
+        });
+        
+        if (categoryToFilter && categoryToFilter !== 'All') {
+          params.append('category', categoryToFilter);
+        }
+        if (selectedDate) {
+          params.append('date', selectedDate.toISOString().split('T')[0]);
+        }
+        
+        const url = `http://localhost:3001/api/news${params.toString() ? '?' + params.toString() : ''}`;
+        console.log('🔍 Fetching news with URL:', url);
+        
+        const res = await fetch(url);
+        console.log('📡 Response received:', res.status, res.statusText);
+        
         if (res.ok) {
           const body = await res.json();
+          console.log('✅ API Response raw body:', body);
+          console.log('✅ API Response summary:', {
+            status: body.status,
+            results: body.results,
+            dataLength: body.data?.length,
+            filters: body.filters,
+            hasData: !!body.data,
+            isArray: Array.isArray(body.data)
+          });
+          
           // API returns { status, results, totalPages, currentPage, data }
-          const items = Array.isArray(body.data) ? body.data : body;
-          if (mounted && items) {
-            setNews(items.map(mapServerItemToUI));
+          const items = Array.isArray(body.data) ? body.data : (body.data ? [body.data] : []);
+          console.log('📋 Items to process:', items.length);
+          
+          if (mounted && items && items.length > 0) {
+            const mappedItems = items.map(mapServerItemToUI);
+            console.log('📦 Setting news state with', mappedItems.length, 'items');
+            console.log('📰 First item:', mappedItems[0]);
+            setNews(mappedItems);
+          } else if (mounted) {
+            console.log('⚠️ No items to display, setting empty array');
+            console.log('⚠️ This will trigger empty state UI');
+            setNews([]);
+          }
+        } else {
+          console.error('❌ Failed to fetch news:', res.status, res.statusText);
+          const errorText = await res.text();
+          console.error('❌ Error response:', errorText);
+          
+          if (mounted) {
+            // Handle specific error codes
+            if (res.status === 404) {
+              setError('News endpoint not found. Please check if the backend server is running.');
+            } else if (res.status === 500) {
+              setError('Backend server error. The server encountered an issue while fetching news.');
+            } else if (res.status === 503) {
+              setError('Backend service unavailable. Please try again in a moment.');
+            } else {
+              setError(`Failed to fetch news (Error ${res.status}). Please try refreshing the page.`);
+            }
+            setNews([]); // Set empty array on error
           }
         }
       } catch (err) {
-        console.error('Error loading initial news:', err);
+        console.error('❌ Error loading initial news:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+        
+        if (mounted) {
+          // Handle specific error types
+          if (errorMessage.includes('fetch')) {
+            setError('Cannot connect to backend server. Please ensure the server is running on port 3001.');
+          } else if (errorMessage.includes('JSON')) {
+            setError('Invalid response from server. The backend may be experiencing issues.');
+          } else {
+            setError(`Failed to load news: ${errorMessage}`);
+          }
+          setNews([]);  // Set empty array on error
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingNews(false);
+        }
       }
     })();
     return () => { mounted = false };
-  }, []);
+  }, [selectedCategory, selectedSubcategory, selectedDate]);
 
   // Sync with real-time recentNews pushed by socket
   useEffect(() => {
@@ -127,54 +249,127 @@ const Dashboard = () => {
       // recentNews may be an array of server-style items
       try {
         const mapped = recentNews.map(mapServerItemToUI);
-        setNews(prev => {
-          // Merge newest items in front and dedupe by id
-          const combined = [...mapped, ...prev];
-          const seen = new Set();
-          return combined.filter(item => {
-            if (seen.has(item.id)) return false;
-            seen.add(item.id);
-            return true;
-          }).slice(0, 50);
-        });
+        
+        // Get current filter criteria
+        const categoryToFilter = selectedSubcategory || selectedCategory;
+        const hasActiveFilters = (categoryToFilter && categoryToFilter !== 'All') || selectedDate;
+        
+        console.log('📡 Socket received news:', mapped.length, 'items. Active filters:', hasActiveFilters);
+        
+        // If we have active filters, only add items that match
+        const filtered = hasActiveFilters ? mapped.filter(item => {
+          // Check category match
+          const categoryMatch = !categoryToFilter || categoryToFilter === 'All' || 
+            item.category.toLowerCase() === categoryToFilter.toLowerCase();
+          
+          // Check date match
+          const dateMatch = !selectedDate || 
+            item.date === selectedDate.toISOString().split('T')[0];
+          
+          const matches = categoryMatch && dateMatch;
+          if (!matches) {
+            console.log('🚫 Filtering out socket item:', item.title, 'category:', item.category);
+          }
+          return matches;
+        }) : mapped;
+        
+        console.log('✅ Adding', filtered.length, 'filtered items from socket');
+        
+        if (filtered.length > 0) {
+          setNews(prev => {
+            // Merge newest items in front and dedupe by id
+            const combined = [...filtered, ...prev];
+            const seen = new Set();
+            return combined.filter(item => {
+              if (seen.has(item.id)) return false;
+              seen.add(item.id);
+              return true;
+            }).slice(0, 50);
+          });
+        }
       } catch (err) {
         console.error('Error mapping recentNews from socket:', err);
       }
     }
-  }, [recentNews]);
+  }, [recentNews, selectedCategory, selectedSubcategory, selectedDate]);
 
   /**
    * Handles manual refresh action for news, uses SocketContext if online.
+   * Also re-fetches from backend with current filters.
    */
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Use real-time refresh if connected
-    if (isConnected) {
-      requestNewsRefresh();
-    }
-    // Simulate fetching new data
-    setTimeout(() => {
-      setIsRefreshing(false);
+    
+    try {
+      // Build query parameters for filtering
+      const params = new URLSearchParams();
+      
+      // Use subcategory if selected, otherwise use main category
+      const categoryToFilter = selectedSubcategory || selectedCategory;
+      
+      if (categoryToFilter && categoryToFilter !== 'All') {
+        params.append('category', categoryToFilter);
+      }
+      if (selectedDate) {
+        params.append('date', selectedDate.toISOString().split('T')[0]);
+      }
+      
+      const url = `http://localhost:3001/api/news${params.toString() ? '?' + params.toString() : ''}`;
+      console.log('🔄 Refreshing news with filters:', url);
+      
+      const res = await fetch(url);
+      let resultCount = 0;
+      
+      if (res.ok) {
+        const body = await res.json();
+        console.log('✅ Refreshed news:', body.results, 'items');
+        resultCount = body.results || 0;
+        const items = Array.isArray(body.data) ? body.data : body;
+        if (items) {
+          setNews(items.map(mapServerItemToUI));
+        }
+      }
+      
+      // Also use real-time refresh if connected
+      if (isConnected) {
+        requestNewsRefresh();
+      }
+      
       toast({
         title: "Refreshed",
-        description: "Latest updates fetched successfully.",
+        description: `Latest updates fetched successfully. ${resultCount} articles found.`,
       });
-    }, 1000);
+    } catch (err) {
+      console.error('❌ Error refreshing news:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      
+      // Show user-friendly error toast
+      toast({
+        title: "Refresh Failed",
+        description: errorMessage.includes('fetch') 
+          ? "Cannot connect to server. Please check if the backend is running."
+          : "Could not fetch latest updates. Please try again.",
+        variant: "destructive",
+      });
+      
+      // Set error state if persistent
+      if (errorMessage.includes('fetch')) {
+        setError('Backend server is not reachable. Please ensure it is running on port 3001.');
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
-  const filteredNews = (() => {
-    const items = news.filter((item) => {
-      const categoryMatch = selectedCategory === "All" || item.category === selectedCategory;
-      // If item.date is missing or invalid, don't filter it out strictly by date
-      const newsDate = item.date ? new Date(item.date) : null;
-      const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-      const newsDateOnly = newsDate ? new Date(newsDate.getFullYear(), newsDate.getMonth(), newsDate.getDate()) : null;
-      const dateMatch = newsDateOnly ? (newsDateOnly.getTime() === selectedDateOnly.getTime()) : true;
-      return categoryMatch && dateMatch;
-    });
-    // If nothing matches due to strict date, fall back to showing latest items by category only
-    return items.length > 0 ? items : news.filter(i => (selectedCategory === 'All' || i.category === selectedCategory));
-  })();
+  // Since filtering is now done server-side, we just display the news from state
+  // Client-side filtering is minimal - only if socket adds new items that need local filtering
+  // Backend already filters, so we just use the news from state
+  const filteredNews = news;
+  
+  // Debug logging
+  console.log('🎨 Render - filteredNews count:', filteredNews.length);
+  console.log('🎨 Render - isLoadingNews:', isLoadingNews);
+  console.log('🎨 Render - selectedCategory:', selectedCategory, 'selectedSubcategory:', selectedSubcategory);
 
   /**
    * Triggers a call to backend endpoint for OpenAI summarization of an article.
@@ -276,8 +471,17 @@ const Dashboard = () => {
               )}
             </div>
             <p className="text-muted-foreground">
-              Stay updated with the latest developments in technology
-              {isConnected && ` • ${userCount} users online`}
+              {selectedCategory === 'Trending' ? (
+                <span className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-orange-500" />
+                  <span className="text-orange-500 font-semibold">Showing trending tools and technology news</span>
+                </span>
+              ) : (
+                <>
+                  Stay updated with the latest developments in technology
+                  {isConnected && ` • ${userCount} users online`}
+                </>
+              )}
             </p>
           </div>
           <div className="flex gap-2">
@@ -301,66 +505,442 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <Card className="border-border bg-card">
-        <CardContent className="pt-6 space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <label className="text-sm font-medium mb-2 flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                Category
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {categories.map((category) => (
-                  <Button
-                    key={category}
-                    variant={selectedCategory === category ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedCategory(category)}
-                  >
-                    {category}
-                  </Button>
-                ))}
+      {/* Connection Status Banner */}
+      {!isConnected && (
+        <Card className="border-yellow-500/50 bg-yellow-950/20">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-3">
+              <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse"></div>
+              <p className="text-sm text-yellow-500">
+                Real-time updates disconnected. You can still view articles, but won't receive live updates.
+              </p>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={handleRefresh}
+                className="ml-auto text-yellow-500 hover:text-yellow-400"
+              >
+                Retry Connection
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <Card className="border-red-500 bg-red-950/20">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 text-red-500">⚠️</div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-red-500 mb-2">Error Occurred</h3>
+                <p className="text-sm text-red-300 mb-3">{error}</p>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    setError(null);
+                    setSelectedCategory('All');
+                    setSelectedSubcategory("");
+                    setSelectedDate(undefined);
+                  }}
+                >
+                  Reset and Clear Error
+                </Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="border-border bg-card">
+        <CardContent className="pt-6 space-y-4">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search categories... (e.g., React, Python, Docker, Security)"
+              value={categorySearch}
+              onChange={(e) => setCategorySearch(e.target.value)}
+              className="pl-10 pr-4"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Main Category Dropdown */}
+            <div>
+              <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                Main Category
+              </label>
+              <Select value={selectedCategory} onValueChange={(value) => {
+                console.log('📂 Main Category dropdown changed to:', value);
+                setSelectedCategory(value);
+                setSelectedSubcategory(""); // Reset subcategory when main changes
+              }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {Object.keys(categoryHierarchy).map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      <div className="flex items-center gap-2">
+                        {cat === 'Trending' && <TrendingUp className="h-4 w-4 text-orange-500" />}
+                        <span className={cat === 'Trending' ? 'font-semibold text-orange-500' : ''}>
+                          {cat}
+                        </span>
+                        {categoryHierarchy[cat].length > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {categoryHierarchy[cat].length}
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Subcategory Dropdown (only if main category has children) */}
+            {selectedCategory !== 'All' && categoryHierarchy[selectedCategory]?.length > 0 && (
+              <div>
+                <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <ChevronDown className="h-4 w-4" />
+                  Subcategory
+                </label>
+                <Select 
+                  value={selectedSubcategory || "__all__"} 
+                  onValueChange={(value) => {
+                    // Handle the special "__all__" value
+                    setSelectedSubcategory(value === "__all__" ? "" : value);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={`All ${selectedCategory}`} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    <SelectItem value="__all__">All {selectedCategory}</SelectItem>
+                    {categoryHierarchy[selectedCategory]
+                      .filter(subcat => 
+                        categorySearch === "" || 
+                        subcat.toLowerCase().includes(categorySearch.toLowerCase())
+                      )
+                      .map((subcat) => (
+                        <SelectItem key={subcat} value={subcat}>
+                          {subcat}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Date Filter */}
             <div>
               <label className="text-sm font-medium mb-2 flex items-center gap-2">
                 <CalendarIcon className="h-4 w-4" />
-                Date
+                Date Filter (Optional)
               </label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-[200px] justify-start text-left font-normal",
+                      "w-full justify-start text-left font-normal",
                       !selectedDate && "text-muted-foreground"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                    {selectedDate && selectedDate instanceof Date && !isNaN(selectedDate.getTime())
+                      ? format(selectedDate, "PPP") 
+                      : <span>All dates</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
                     selected={selectedDate}
-                    onSelect={(date) => date && setSelectedDate(date)}
+                    onSelect={(date) => setSelectedDate(date)}
                     initialFocus
                     className="pointer-events-auto"
                   />
+                  {selectedDate && (
+                    <div className="p-3 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setSelectedDate(undefined)}
+                      >
+                        Clear date filter
+                      </Button>
+                    </div>
+                  )}
                 </PopoverContent>
               </Popover>
             </div>
           </div>
+
+          {/* Quick Category Chips */}
+          {categorySearch === "" && selectedCategory === 'All' && (
+            <div>
+              <label className="text-sm font-medium mb-2 block">Quick Select:</label>
+              <div className="flex flex-wrap gap-2">
+                {/* Trending gets special treatment - always first */}
+                <Badge
+                  variant="outline"
+                  className="cursor-pointer hover:bg-orange-500 hover:text-white transition-colors border-orange-500 text-orange-500 font-semibold"
+                  onClick={() => {
+                    try {
+                      console.log('🎯 Quick Select: Trending clicked');
+                      setSelectedCategory('Trending');
+                      setSelectedSubcategory("");
+                    } catch (error) {
+                      console.error('❌ Error in Trending click:', error);
+                    }
+                  }}
+                >
+                  <TrendingUp className="h-3 w-3 mr-1" />
+                  Trending
+                </Badge>
+                {Object.keys(categoryHierarchy)
+                  .filter(cat => cat !== 'All' && cat !== 'Trending')
+                  .slice(0, 7)
+                  .map((cat) => (
+                    <Badge
+                      key={cat}
+                      variant="outline"
+                      className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                      onClick={() => {
+                        try {
+                          console.log('🎯 Quick Select:', cat, 'clicked');
+                          setSelectedCategory(cat);
+                          setSelectedSubcategory("");
+                        } catch (error) {
+                          console.error('❌ Error in category click:', error);
+                        }
+                      }}
+                    >
+                      {cat}
+                    </Badge>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Search Results */}
+          {categorySearch !== "" && (
+            <div>
+              <label className="text-sm font-medium mb-2 block">Search Results:</label>
+              <div className="flex flex-wrap gap-2 max-h-[150px] overflow-y-auto">
+                {allCategories
+                  .filter(cat => cat.toLowerCase().includes(categorySearch.toLowerCase()))
+                  .map((cat) => (
+                    <Badge
+                      key={cat}
+                      variant="outline"
+                      className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                      onClick={() => {
+                        console.log('🔎 Search result clicked:', cat);
+                        // Find parent category
+                        const parent = Object.keys(categoryHierarchy).find(p => 
+                          p === cat || categoryHierarchy[p].includes(cat)
+                        );
+                        console.log('🔎 Found parent:', parent, 'for category:', cat);
+                        if (parent === cat) {
+                          console.log('🔎 Setting main category:', cat);
+                          setSelectedCategory(cat);
+                          setSelectedSubcategory("");
+                        } else if (parent) {
+                          console.log('🔎 Setting parent:', parent, 'subcategory:', cat);
+                          setSelectedCategory(parent);
+                          setSelectedSubcategory(cat);
+                        }
+                        setCategorySearch("");
+                      }}
+                    >
+                      {cat}
+                    </Badge>
+                  ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Active Filters Display */}
+          {(selectedCategory !== 'All' || selectedSubcategory || selectedDate) && (
+            <div className="flex items-center gap-2 pt-2 border-t flex-wrap">
+              <span className="text-sm font-medium">Active Filters:</span>
+              {selectedCategory !== 'All' && (
+                <Badge variant="secondary" className="gap-1">
+                  {selectedCategory}
+                  <X 
+                    className="h-3 w-3 cursor-pointer hover:text-destructive" 
+                    onClick={() => {
+                      setSelectedCategory('All');
+                      setSelectedSubcategory("");
+                    }}
+                  />
+                </Badge>
+              )}
+              {selectedSubcategory && (
+                <Badge variant="secondary" className="gap-1">
+                  {selectedSubcategory}
+                  <X 
+                    className="h-3 w-3 cursor-pointer hover:text-destructive" 
+                    onClick={() => setSelectedSubcategory("")}
+                  />
+                </Badge>
+              )}
+              {selectedDate && (
+                <Badge variant="secondary" className="gap-1">
+                  {selectedDate instanceof Date && !isNaN(selectedDate.getTime()) 
+                    ? format(selectedDate, "MMM dd, yyyy")
+                    : 'Invalid date'}
+                  <X 
+                    className="h-3 w-3 cursor-pointer hover:text-destructive" 
+                    onClick={() => setSelectedDate(undefined)}
+                  />
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedCategory('All');
+                  setSelectedSubcategory("");
+                  setSelectedDate(undefined);
+                  setCategorySearch("");
+                }}
+                className="ml-auto"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear All
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {filteredNews.length === 0 ? (
+      {isLoadingNews ? (
         <Card className="border-border bg-card">
           <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              No updates found for the selected date and category.
-            </p>
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              <p className="text-center text-muted-foreground">Loading news articles...</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : filteredNews.length === 0 ? (
+        <Card className="border-border bg-card">
+          <CardContent className="pt-6">
+            <div className="text-center py-12 space-y-6">
+              {/* Empty State Icon */}
+              <div className="flex justify-center">
+                <div className="relative">
+                  <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
+                    <svg 
+                      className="h-10 w-10 text-primary" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={2} 
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" 
+                      />
+                    </svg>
+                  </div>
+                  <div className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                    <span className="text-yellow-600 text-xs">0</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Empty State Message */}
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold">No Articles Found</h3>
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  {selectedCategory !== 'All' 
+                    ? `There are currently no articles in the "${selectedSubcategory || selectedCategory}" category`
+                    : 'No articles match your current filters'
+                  }
+                  {selectedDate && selectedDate instanceof Date && !isNaN(selectedDate.getTime()) && 
+                    ` for ${format(selectedDate, "MMMM dd, yyyy")}`}.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    console.log('🔄 Clearing all filters');
+                    setSelectedCategory('All');
+                    setSelectedSubcategory("");
+                    setSelectedDate(undefined);
+                    setCategorySearch("");
+                  }}
+                  className="min-w-[200px]"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Clear All Filters
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    console.log('🔄 Refreshing news feed');
+                    handleRefresh();
+                  }}
+                  className="min-w-[200px]"
+                >
+                  <svg 
+                    className="h-4 w-4 mr-2" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                    />
+                  </svg>
+                  Refresh Feed
+                </Button>
+              </div>
+
+              {/* Suggestions */}
+              {selectedCategory !== 'All' && (
+                <div className="pt-4 border-t border-border mt-6">
+                  <p className="text-sm text-muted-foreground mb-3">Try exploring these categories:</p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {['All', 'Frontend', 'AI & ML', 'Tools', 'Trending'].map((cat) => (
+                      cat !== selectedCategory && (
+                        <Button
+                          key={cat}
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            console.log(`📂 Switching to ${cat} category`);
+                            setSelectedCategory(cat);
+                            setSelectedSubcategory("");
+                          }}
+                          className="text-xs"
+                        >
+                          {cat}
+                        </Button>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -369,7 +949,14 @@ const Dashboard = () => {
           <Card key={item.id} className="group overflow-hidden border-border bg-card transition-all hover:shadow-lg hover:shadow-primary/10">
             <CardHeader>
               <div className="flex items-start justify-between">
-                <Badge variant="secondary" className="mb-2">
+                <Badge 
+                  variant={item.category === 'Trending' ? 'default' : 'secondary'} 
+                  className={cn(
+                    "mb-2",
+                    item.category === 'Trending' && "bg-orange-500 hover:bg-orange-600 text-white"
+                  )}
+                >
+                  {item.category === 'Trending' && <TrendingUp className="h-3 w-3 mr-1" />}
                   {item.category}
                 </Badge>
                 <span className="text-xs text-muted-foreground">{item.date}</span>

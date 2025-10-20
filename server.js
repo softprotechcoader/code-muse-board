@@ -444,14 +444,21 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
     const user = connectedUsers.get(socket.id);
     connectedUsers.delete(socket.id);
     io.emit('user_count_update', connectedUsers.size);
     if (user) {
       socket.broadcast.emit('user_left', { username: user.username || 'Anonymous', leftAt: new Date().toISOString() });
     }
-    console.log(`User disconnected: ${socket.id}`);
+    
+    // Log disconnect with reason (HMR in dev causes frequent disconnects)
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev && (reason === 'client namespace disconnect' || reason === 'transport close')) {
+      console.log(`🔄 User reconnecting (HMR): ${socket.id} - ${reason}`);
+    } else {
+      console.log(`User disconnected: ${socket.id} - Reason: ${reason}`);
+    }
   });
 
   // --- NEWS ---

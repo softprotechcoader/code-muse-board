@@ -1,0 +1,217 @@
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ERROR HANDLING ARCHITECTURE                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────┐
+│   USER      │
+│  ACTIONS    │
+└──────┬──────┘
+       │
+       ├─── Click Category Filter ────►┌──────────────────┐
+       │                                │   FRONTEND       │
+       ├─── Click Refresh ────────────►│  (Dashboard)     │
+       │                                └────────┬─────────┘
+       └─── Click Clear Filters ───────────────►│
+                                                 │
+                        ┌────────────────────────┴──────────────┐
+                        │                                       │
+                   ┌────▼─────┐                         ┌──────▼──────┐
+                   │  FETCH   │                         │   SOCKET    │
+                   │   API    │                         │ CONNECTION  │
+                   └────┬─────┘                         └──────┬──────┘
+                        │                                      │
+        ┌───────────────┼──────────────┐                      │
+        │               │              │                      │
+    SUCCESS          ERROR          TIMEOUT              DISCONNECT
+        │               │              │                      │
+        ▼               ▼              ▼                      ▼
+┌───────────────┐ ┌─────────────┐ ┌──────────────┐ ┌──────────────────┐
+│ DATA RECEIVED │ │ CATCH ERROR │ │ CATCH ERROR  │ │ SHOW CONNECTION  │
+│               │ │             │ │              │ │    BANNER        │
+└───────┬───────┘ └──────┬──────┘ └──────┬───────┘ └──────────────────┘
+        │                │               │
+        │                └───────┬───────┘
+        │                        │
+        │                        ▼
+        │              ┌──────────────────┐
+        │              │  CATEGORIZE      │
+        │              │     ERROR        │
+        │              └────────┬─────────┘
+        │                       │
+        │         ┌─────────────┼──────────────┬─────────────┐
+        │         │             │              │             │
+        │      NETWORK       404/500       JSON ERROR    TIMEOUT
+        │         │             │              │             │
+        │         ▼             ▼              ▼             ▼
+        │   ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐
+        │   │"Cannot  │  │"Backend  │  │"Invalid  │  │"Request │
+        │   │connect" │  │ error"   │  │response" │  │timeout" │
+        │   └────┬────┘  └─────┬────┘  └─────┬────┘  └────┬────┘
+        │        │             │             │            │
+        │        └─────────────┴─────────────┴────────────┘
+        │                      │
+        ▼                      ▼
+┌───────────────────┐  ┌────────────────┐
+│  CHECK RESULTS    │  │  SET ERROR     │
+│    COUNT          │  │    STATE       │
+└────────┬──────────┘  └────────┬───────┘
+         │                      │
+    ┌────┴─────┐                │
+    │          │                │
+    │          │                │
+    ▼          ▼                ▼
+┌─────┐    ┌──────┐      ┌───────────┐
+│ > 0 │    │  = 0 │      │  ERROR UI │
+│     │    │      │      │           │
+└──┬──┘    └───┬──┘      └─────┬─────┘
+   │           │               │
+   ▼           ▼               ▼
+┌─────────┐ ┌──────────────┐ ┌──────────────────┐
+│ DISPLAY │ │ EMPTY STATE  │ │ RED ERROR CARD   │
+│ ARTICLES│ │     UI       │ │ • Error message  │
+│         │ │              │ │ • Reset button   │
+│         │ │ • Icon + "0" │ │ • Clear action   │
+│         │ │ • Message    │ └──────────────────┘
+│         │ │ • Actions:   │
+│         │ │   - Clear    │
+│         │ │   - Refresh  │
+│         │ │ • Suggestions│
+└─────────┘ └──────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                     BACKEND ERROR HANDLING                           │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐
+│ API REQUEST  │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────┐
+│ newsRoutes.js    │
+│ GET /api/news    │
+└────────┬─────────┘
+         │
+         ▼
+┌─────────────────┐
+│ BUILD WHERE     │
+│ CLAUSE          │
+│ • category?     │
+│ • date?         │
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────┐
+│ PRISMA QUERY     │
+│ findMany + count │
+└────────┬─────────┘
+         │
+    ┌────┴─────┐
+    │          │
+SUCCESS     ERROR
+    │          │
+    ▼          ▼
+┌─────────┐ ┌──────────────┐
+│ RESULTS │ │ CATCH BLOCK  │
+└────┬────┘ │              │
+     │      │ • Log error  │
+     │      │ • Log stack  │
+     │      │ • Return 500 │
+     │      └──────────────┘
+     │
+┌────┴─────┐
+│          │
+│          │
+▼          ▼
+> 0      = 0
+│          │
+└────┬─────┘
+     │
+     ▼
+┌──────────────────┐
+│ RETURN JSON      │
+│ {                │
+│   status: 'ok',  │
+│   results: N,    │
+│   data: [...],   │
+│   filters: {}    │
+│ }                │
+└──────────────────┘
+     │
+     ▼
+┌──────────────────┐
+│ FRONTEND         │
+│ RECEIVES         │
+└──────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                    USER EXPERIENCE FLOW                              │
+└─────────────────────────────────────────────────────────────────────┘
+
+USER CLICKS "BACKEND" CATEGORY (0 articles)
+│
+├─► Frontend: setSelectedCategory('Backend')
+│
+├─► Frontend: useEffect triggers
+│
+├─► Frontend: Fetch http://localhost:3001/api/news?category=Backend
+│
+├─► Backend: Receives request
+│   │
+│   ├─► Apply filter: { category: { equals: 'Backend', mode: 'insensitive' } }
+│   │
+│   ├─► Query database: Found 0 articles
+│   │
+│   └─► Return: { status: 'success', results: 0, data: [] }
+│
+├─► Frontend: Receives response (0 results)
+│
+├─► Frontend: setNews([])
+│
+├─► Frontend: Render check: filteredNews.length === 0
+│
+└─► Frontend: Display EMPTY STATE UI ✅
+    │
+    ├─► Show document icon with "0" badge
+    ├─► Show message: "No articles in Backend category"
+    ├─► Show "Clear All Filters" button
+    ├─► Show "Refresh Feed" button
+    └─► Show category suggestions: All, Frontend, AI & ML, Tools, Trending
+
+
+USER STOPS BACKEND SERVER
+│
+├─► Socket: Connection lost
+│
+├─► Frontend: isConnected = false
+│
+└─► Frontend: Display CONNECTION BANNER ⚠️
+    │
+    ├─► Yellow banner with pulse dot
+    ├─► Message: "Real-time updates disconnected"
+    └─► "Retry Connection" button
+
+
+USER CLICKS REFRESH (backend still down)
+│
+├─► Frontend: handleRefresh()
+│
+├─► Frontend: fetch() fails (network error)
+│
+├─► Frontend: catch block
+│
+├─► Frontend: Show toast ❌
+│   │
+│   ├─► Title: "Refresh Failed"
+│   └─► Description: "Cannot connect to server"
+│
+└─► Frontend: Set error state
+    │
+    └─► Display ERROR CARD 🔴
+        │
+        ├─► Red border, red background
+        ├─► Warning icon
+        ├─► Error message
+        └─► "Reset and Clear Error" button

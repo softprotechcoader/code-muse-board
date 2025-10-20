@@ -7,51 +7,108 @@ import { config } from '../../config.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all news with pagination
+// Get all news with pagination, category, and date filtering
 router.get('/', async (req, res, next) => {
   try {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || (config.news && config.news.maxArticles) || 10;
+    console.log('📥 GET /api/news - Query params:', req.query);
+    
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || (config.news && config.news.maxArticles) || 50;
     const skip = (page - 1) * limit;
+    const category = req.query.category;
+    const date = req.query.date;
+
+    // Build where clause for filters
+    const where = {};
+    
+    // Category filter (case-insensitive)
+    if (category && category !== 'All') {
+      where.category = {
+        equals: category,
+        mode: 'insensitive'
+      };
+      console.log('🔍 Category filter applied:', category);
+    }
+    
+    // Date filter (exact date match)
+    if (date) {
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+      
+      where.timestamp = {
+        gte: startDate,
+        lte: endDate
+      };
+      console.log('📅 Date filter applied:', date, 'Range:', startDate, 'to', endDate);
+    }
+
+    console.log('🔎 Prisma where clause:', JSON.stringify(where, null, 2));
 
     const [news, total] = await Promise.all([
       prisma.news.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { timestamp: 'desc' }
       }),
-      prisma.news.count()
+      prisma.news.count({ where })
     ]);
 
+    console.log('✅ Query result: Found', news.length, 'articles out of', total, 'total matching');
+    
+    // Log first article category if exists
+    if (news.length > 0) {
+      console.log('📰 Sample article categories:', news.slice(0, 3).map(n => ({ title: n.title.substring(0, 50), category: n.category })));
+    } else {
+      console.log('ℹ️ No articles found matching the filters');
+    }
+
+    // Always return success, even with 0 results
     res.json({
       status: 'success',
       results: news.length,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / limit) || 0,
       currentPage: page,
-      data: news
+      filters: { category, date },
+      data: news || [] // Ensure empty array instead of null
     });
   } catch (error) {
-    next(new AppError(500, 'Error fetching news'));
+    console.error('❌ Error fetching news:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      stack: error.stack,
+      query: req.query
+    });
+    
+    // Don't crash - return error response
+    next(new AppError(500, 'Error fetching news from database'));
   }
 });
 
 // Get news by ID
 router.get('/:id', async (req, res, next) => {
   try {
+    console.log('🔍 Fetching single news item:', req.params.id);
+    
     const news = await prisma.news.findUnique({
       where: { id: req.params.id }
     });
 
     if (!news) {
-      return next(new AppError(404, 'News not found'));
+      console.log('⚠️ News item not found:', req.params.id);
+      return next(new AppError(404, 'News article not found'));
     }
 
+    console.log('✅ Found news item:', news.title.substring(0, 50));
     res.json({
       status: 'success',
       data: news
     });
   } catch (error) {
-    next(new AppError(500, 'Error fetching news item'));
+    console.error('❌ Error fetching news item:', error.message);
+    next(new AppError(500, 'Error fetching news article'));
   }
 });
 

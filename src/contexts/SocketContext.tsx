@@ -55,20 +55,56 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   // Establishes and manages websocket connection on mount
   useEffect(() => {
-    // Connect to backend
+    // Connect to backend with reconnection settings
     const newSocket = io('http://localhost:3001', {
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      autoConnect: true
     });
 
     // Connection event handlers
     newSocket.on('connect', () => {
-      console.log('Connected to real-time server');
+      console.log('✅ Connected to real-time server');
       setIsConnected(true);
     });
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from real-time server');
+    
+    newSocket.on('disconnect', (reason) => {
+      console.log('⚠️ Disconnected from real-time server:', reason);
+      setIsConnected(false);
+      
+      // Auto-reconnect if disconnect was not intentional
+      if (reason === 'io server disconnect') {
+        // Server initiated disconnect, try to reconnect
+        newSocket.connect();
+      }
+    });
+    
+    newSocket.on('connect_error', (error) => {
+      console.error('❌ Connection error:', error.message);
       setIsConnected(false);
     });
+    
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
+      setIsConnected(true);
+    });
+    
+    newSocket.on('reconnect_attempt', (attemptNumber) => {
+      console.log('🔄 Reconnection attempt', attemptNumber);
+    });
+    
+    newSocket.on('reconnect_error', (error) => {
+      console.error('❌ Reconnection error:', error.message);
+    });
+    
+    newSocket.on('reconnect_failed', () => {
+      console.error('❌ Reconnection failed after all attempts');
+      setIsConnected(false);
+    });
+    
     newSocket.on('user_count_update', (count) => setUserCount(count));
     // News event handlers
     newSocket.on('recent_news', (news) => setRecentNews(news));
@@ -93,11 +129,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       console.log('User stopped typing:', data);
     });
     setSocket(newSocket);
+    
     // On unmount, cleanup socket
+    // Note: In development with HMR, this may disconnect/reconnect frequently
+    // This is expected behavior and socket will auto-reconnect
     return () => {
+      console.log('🧹 Cleaning up socket connection (likely HMR)');
       newSocket.close();
     };
-  }, []);
+  }, []); // Empty dependency array ensures this only runs once on mount
 
   /** Emits a user_join event (with username/avatar) */
   const joinUser = (userData: { username: string; avatar?: string }) => {
