@@ -18,6 +18,8 @@ import newsRoutes from './src/routes/newsRoutes.js';
 import chatRoutes from './src/routes/chatRoutes.js';
 import activityRoutes from './src/routes/activityRoutes.js';
 import roadmapRoutes from './src/routes/roadmapRoutes.js';
+import trackerRoutes from './src/routes/trackerRoutes.js';
+import skillUpRoutes from './src/routes/skillUpRoutes.js';
 import { getNews, getNewsById, generateAISummary, generateRandomNews } from './src/services/newsService.js';
 
 const app = express();
@@ -265,6 +267,8 @@ app.use('/api/news', newsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/roadmap', roadmapRoutes);
+app.use('/api/tracker', trackerRoutes);
+app.use('/api/skillup', skillUpRoutes);
 
 
 /**

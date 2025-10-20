@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from "@/components/ui/pagination";
-import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, ChevronRight, TrendingUp, Activity, Users, MessageSquare, Newspaper } from "lucide-react";
+import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, ChevronRight, TrendingUp, Activity, Users, MessageSquare, Newspaper, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 import { Calendar } from "@/components/ui/calendar";
@@ -38,6 +38,7 @@ interface NewsItem {
   tutorial?: string;
   category: string;
   date: string;
+  source?: string;
 }
 
 // --- Hierarchical Tech Categories with Subcategories ---
@@ -99,6 +100,7 @@ const Dashboard = () => {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
   const [categorySearch, setCategorySearch] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined); // undefined = no date filter
+  const [showOnlyOfficial, setShowOnlyOfficial] = useState<boolean>(false); // Filter for official sources only
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Load showRealtime from localStorage, default to false
   const [showRealtime, setShowRealtime] = useState(() => {
@@ -161,7 +163,8 @@ const Dashboard = () => {
       github: githubUrl,
       tutorial: item.tutorial || undefined,
       category: item.category || 'General',
-      date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+      date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+      source: source
     };
   };
 
@@ -429,13 +432,16 @@ const Dashboard = () => {
 
   // Since filtering is now done server-side, we just display the news from state
   // Client-side filtering is minimal - only if socket adds new items that need local filtering
-  // Backend already filters, so we just use the news from state
-  const filteredNews = news;
+  // Backend already filters by category/date, we filter for official sources on frontend
+  const filteredNews = showOnlyOfficial 
+    ? news.filter(item => item.source?.toLowerCase().includes('official'))
+    : news;
   
   // Debug logging
   console.log('🎨 Render - filteredNews count:', filteredNews.length);
   console.log('🎨 Render - isLoadingNews:', isLoadingNews);
   console.log('🎨 Render - selectedCategory:', selectedCategory, 'selectedSubcategory:', selectedSubcategory);
+  console.log('🎨 Render - showOnlyOfficial:', showOnlyOfficial);
 
   /**
    * Triggers a call to backend endpoint for OpenAI summarization of an article.
@@ -522,6 +528,57 @@ const Dashboard = () => {
       });
     }
   };
+
+  const handleAddToSkillUp = (item: NewsItem) => {
+    const roadmaps = JSON.parse(localStorage.getItem("skillUpRoadmaps") || "[]");
+    
+    // Extract technology/topic from title or category
+    const technology = item.title.split(/[:-]/)[0].trim() || item.category;
+    
+    // Check if roadmap already exists for this technology
+    const existingRoadmap = roadmaps.find((r: any) => r.technology === technology);
+    
+    if (existingRoadmap) {
+      toast({
+        title: "Already in Skill Up",
+        description: `A learning path for "${technology}" already exists.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Create a new roadmap with the article as the first step
+    const newRoadmap = {
+      technology: technology,
+      category: item.category,
+      description: item.description.substring(0, 150) + (item.description.length > 150 ? '...' : ''),
+      difficulty: "Intermediate" as const,
+      estimatedTime: "2-4 weeks",
+      steps: [
+        {
+          id: `${technology.toLowerCase().replace(/\s+/g, '-')}-1`,
+          title: item.title,
+          description: item.description,
+          resources: [
+            { name: "Article", url: item.link },
+            ...(item.docs ? [{ name: "Documentation", url: item.docs }] : []),
+            ...(item.github ? [{ name: "GitHub", url: item.github }] : []),
+            ...(item.tutorial ? [{ name: "Tutorial", url: item.tutorial }] : []),
+          ].filter(r => r.url), // Only include resources with valid URLs
+          completed: false,
+        },
+      ],
+    };
+    
+    roadmaps.push(newRoadmap);
+    localStorage.setItem("skillUpRoadmaps", JSON.stringify(roadmaps));
+    
+    toast({
+      title: "Added to Skill Up! 🎓",
+      description: `"${technology}" learning path created. Visit the Skill Up tab to continue learning.`,
+    });
+  };
+
 
   return (
     <div className="space-y-6">
@@ -766,6 +823,35 @@ const Dashboard = () => {
                 </PopoverContent>
               </Popover>
             </div>
+          </div>
+
+          {/* Official Sources Filter Toggle */}
+          <div className="flex items-center justify-between p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <div>
+                <label className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  Official Sources Only
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Show only verified articles from official tech blogs
+                </p>
+              </div>
+            </div>
+            <Button
+              variant={showOnlyOfficial ? "default" : "outline"}
+              size="sm"
+              className={cn(
+                "transition-all",
+                showOnlyOfficial && "bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
+              )}
+              onClick={() => {
+                setShowOnlyOfficial(!showOnlyOfficial);
+                console.log('✨ Official filter toggled:', !showOnlyOfficial);
+              }}
+            >
+              {showOnlyOfficial ? 'Enabled' : 'Disabled'}
+            </Button>
           </div>
 
           {/* Quick Category Chips */}
@@ -1126,7 +1212,41 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <>
+          {/* News Count and Official Source Stats */}
+          <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Newspaper className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  Showing <span className="text-primary font-bold">{filteredNews.length}</span> articles
+                </span>
+              </div>
+              {showOnlyOfficial && (
+                <Badge 
+                  variant="default"
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Official Sources Only
+                </Badge>
+              )}
+            </div>
+            {!showOnlyOfficial && (
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500"></div>
+                  <span>
+                    {news.filter(item => item.source?.toLowerCase().includes('official')).length} Official
+                  </span>
+                </div>
+                <span>•</span>
+                <span>{news.length - news.filter(item => item.source?.toLowerCase().includes('official')).length} Community</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredNews.map((item, index) => {
             // Debug: Check if GitHub/Docs links exist (first 3 items only)
             if (index < 3) {
@@ -1155,11 +1275,32 @@ const Dashboard = () => {
               ? description.substring(0, 250) + '...' 
               : description;
             
+            // Check if this is an official source
+            const isOfficial = item.source?.toLowerCase().includes('official');
+            
             return (
           <Card 
             key={item.id} 
-            className="group relative overflow-hidden border-border bg-card transition-all duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:scale-[1.02] flex flex-col cursor-pointer"
+            className={cn(
+              "group relative overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] flex flex-col cursor-pointer",
+              isOfficial 
+                ? "border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-500/5 via-card to-card hover:shadow-emerald-500/30 hover:border-emerald-500" 
+                : "border-border bg-card hover:shadow-primary/20"
+            )}
           >
+            {/* Official Badge - Floating Top Left (if official) */}
+            {isOfficial && (
+              <div className="absolute top-3 left-3 z-10">
+                <Badge 
+                  variant="default"
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 border-0"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Official
+                </Badge>
+              </div>
+            )}
+
             {/* Category Badge - Floating Top Right */}
             <div className="absolute top-3 right-3 z-10">
               <Badge 
@@ -1175,10 +1316,23 @@ const Dashboard = () => {
             </div>
 
             <CardHeader className="pb-4 space-y-3">
-              {/* Date */}
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <CalendarIcon className="h-3 w-3" />
-                <span>{item.date}</span>
+              {/* Date and Source */}
+              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                <div className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  <span>{item.date}</span>
+                </div>
+                {item.source && (
+                  <>
+                    <span className="text-muted-foreground/50">•</span>
+                    <span className={cn(
+                      "font-medium",
+                      isOfficial && "text-emerald-600 dark:text-emerald-400"
+                    )}>
+                      {item.source}
+                    </span>
+                  </>
+                )}
               </div>
               
               {/* Title - Clickable to article */}
@@ -1316,6 +1470,16 @@ const Dashboard = () => {
                   Track
                 </Button>
                 
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 hover:bg-blue-500/10 hover:text-blue-500"
+                  onClick={() => handleAddToSkillUp(item)}
+                >
+                  <Target className="h-4 w-4 mr-1" />
+                  Skill Up
+                </Button>
+                
                 {/* GitHub Link */}
                 {item.github ? (
                   <Button
@@ -1351,6 +1515,7 @@ const Dashboard = () => {
             );
           })}
         </div>
+        </>
       )}
 
       {/* Pagination Controls */}

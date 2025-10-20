@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageSquare, Trash2, Wifi, WifiOff } from "lucide-react";
+import { MessageSquare, Trash2, Wifi, WifiOff, BookOpen, Github } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 
@@ -20,9 +20,12 @@ interface TrackedItem {
   id: string;
   title: string;
   description: string;
+  link: string;
   status: "started" | "inProgress" | "completed";
   addedAt: string;
   comments: Array<{ text: string; date: string }>;
+  docs?: string;
+  github?: string;
 }
 
 /**
@@ -192,6 +195,48 @@ const Tracker = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Documentation and GitHub Links - Moved to CardContent for better visibility */}
+                {(item.docs || item.github || item.link) && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Resources</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.link && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => window.open(item.link, "_blank")}
+                        >
+                          <BookOpen className="h-4 w-4" />
+                          Article
+                        </Button>
+                      )}
+                      {item.github && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => window.open(item.github, "_blank")}
+                        >
+                          <Github className="h-4 w-4" />
+                          GitHub
+                        </Button>
+                      )}
+                      {item.docs && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => window.open(item.docs, "_blank")}
+                        >
+                          <BookOpen className="h-4 w-4" />
+                          Documentation
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
                 {item.comments.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium flex items-center gap-2">

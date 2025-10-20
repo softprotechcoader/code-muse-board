@@ -98,6 +98,38 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Get all configured news sources (MUST be before /:id route)
+router.get('/meta/sources', async (req, res, next) => {
+  try {
+    // Import here to avoid circular dependencies
+    const { getConfiguredSources, getSourcesByCategory } = await import('../services/officialTechSources.js');
+    
+    const sources = getConfiguredSources();
+    const byCategory = getSourcesByCategory();
+    
+    // Count sources by category
+    const categoryCounts = {};
+    sources.forEach(source => {
+      categoryCounts[source.category] = (categoryCounts[source.category] || 0) + 1;
+    });
+    
+    res.json({
+      status: 'success',
+      data: {
+        total: sources.length,
+        withRssFeed: sources.filter(s => s.hasBlog).length,
+        withoutRssFeed: sources.filter(s => !s.hasBlog).length,
+        sources: sources,
+        byCategory: byCategory,
+        categoryCounts: categoryCounts
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching sources:', error.message);
+    next(new AppError(500, 'Error fetching news sources'));
+  }
+});
+
 // Get news by ID
 router.get('/:id', async (req, res, next) => {
   try {

@@ -9,6 +9,7 @@ import * as cheerio from 'cheerio';
 import { PrismaClient } from '@prisma/client';
 import { config } from '../../config.js';
 import { aiService } from './aiService.js';
+import { fetchAllOfficialSources } from './officialTechSources.js';
 
 // Initialize Prisma client
 const prisma = new PrismaClient();
@@ -127,17 +128,30 @@ async function fetchNewsFromSource(source) {
 async function fetchAllNews() {
   try {
     console.log('Fetching news from all sources...');
-    const promises = NEWS_SOURCES.map(source => fetchNewsFromSource(source));
-    const results = await Promise.allSettled(promises);
+    
+    // Fetch from existing sources (web scraping)
+    const existingSourcesPromises = NEWS_SOURCES.map(source => fetchNewsFromSource(source));
+    
+    // Fetch from official tech sources (RSS feeds)
+    const officialSourcesPromise = fetchAllOfficialSources();
+    
+    // Wait for all sources
+    const results = await Promise.allSettled([...existingSourcesPromises, officialSourcesPromise]);
+    
     const allArticles = results
       .filter(result => result.status === 'fulfilled')
       .flatMap(result => result.value);
-  // Remove duplicates (same/similar title)
-  console.log(`Raw articles before dedupe: ${allArticles.length}`);
-  const uniqueArticles = removeDuplicateArticles(allArticles);
+    
+    // Remove duplicates (same/similar title)
+    console.log(`Raw articles before dedupe: ${allArticles.length}`);
+    const uniqueArticles = removeDuplicateArticles(allArticles);
+    
     // Sort by recency
     uniqueArticles.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     console.log(`Total unique articles fetched: ${uniqueArticles.length}`);
+    console.log(`  - From web scraping: ${NEWS_SOURCES.length} sources`);
+    console.log(`  - From official RSS feeds: included`);
+    
     return uniqueArticles;
   } catch (error) {
     console.error('Error fetching news:', error.message);
