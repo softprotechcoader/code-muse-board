@@ -310,11 +310,90 @@ const SkillUp = () => {
     );
   };
 
-  const deleteRoadmap = (technology: string, learningPath: "scratch" | "upgrade") => {
-    setRoadmaps(roadmaps.filter((r) => !(r.technology === technology && r.learningPath === learningPath)));
+  const deleteRoadmap = async (technology: string, learningPath?: "scratch" | "upgrade") => {
+    // Normalize learningPath - default to "scratch" if not provided
+    const normalizedPath = learningPath || "scratch";
+    
+    // Find the roadmap to delete - match by technology and learningPath (or undefined)
+    const roadmapToDelete = roadmaps.find(
+      (r) => r.technology === technology && (r.learningPath || "scratch") === normalizedPath
+    );
+
+    if (!roadmapToDelete) {
+      console.error("Delete failed - roadmap not found:", {
+        technology,
+        learningPath: normalizedPath,
+        availableRoadmaps: roadmaps.map(r => ({
+          tech: r.technology,
+          path: r.learningPath
+        }))
+      });
+      
+      toast({
+        title: "Error",
+        description: `Roadmap not found: ${technology} (${normalizedPath})`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Calculate progress before deletion
+    const completedSteps = roadmapToDelete.steps.filter((s) => userProgress[s.id]).length;
+    const totalSteps = roadmapToDelete.steps.length;
+    const progress = ((completedSteps / totalSteps) * 100).toFixed(1);
+
+    // Remove roadmap from state - use same matching logic
+    const updatedRoadmaps = roadmaps.filter(
+      (r) => !(r.technology === technology && (r.learningPath || "scratch") === normalizedPath)
+    );
+    setRoadmaps(updatedRoadmaps);
+
+    // Remove progress data for deleted roadmap steps
+    const updatedProgress = { ...userProgress };
+    roadmapToDelete.steps.forEach((step) => {
+      delete updatedProgress[step.id];
+    });
+    setUserProgress(updatedProgress);
+
+    // Add to history
+    try {
+      const historyEntry = {
+        id: `deleted-${Date.now()}`,
+        title: `Deleted: ${technology} (${normalizedPath === "scratch" ? "Beginner" : "Upgrade"} Path)`,
+        description: `${roadmapToDelete.description} - Progress: ${progress}% (${completedSteps}/${totalSteps} steps completed)`,
+        status: "deleted",
+        completedAt: new Date().toISOString(),
+        comments: [
+          {
+            text: `Roadmap deleted. ${completedSteps} out of ${totalSteps} steps were completed before deletion.`,
+            date: new Date().toISOString(),
+          },
+        ],
+      };
+
+      // Get existing history
+      const existingHistory = JSON.parse(localStorage.getItem("history") || "[]");
+      existingHistory.push(historyEntry);
+      localStorage.setItem("history", JSON.stringify(existingHistory));
+
+      // Log activity to backend if available
+      fetch("http://localhost:3001/api/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ROADMAP_DELETED",
+          details: `Deleted ${technology} ${normalizedPath} roadmap with ${progress}% completion`,
+          category: "LEARNING",
+          importance: "MEDIUM",
+        }),
+      }).catch((err) => console.warn("Failed to log activity:", err));
+    } catch (error) {
+      console.error("Error logging to history:", error);
+    }
+
     toast({
       title: "Roadmap Deleted",
-      description: "Your progress has been saved.",
+      description: `${technology} roadmap removed and logged to history.`,
     });
   };
 
@@ -585,7 +664,7 @@ const SkillUp = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => deleteRoadmap(roadmap.technology, roadmap.learningPath || "scratch")}
+                                    onClick={() => deleteRoadmap(roadmap.technology, roadmap.learningPath)}
                                     className="text-destructive hover:text-destructive"
                                   >
                                     <Trash2 className="h-4 w-4 mr-2" />

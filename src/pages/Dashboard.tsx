@@ -241,16 +241,25 @@ const Dashboard = () => {
             
             if (items && items.length > 0) {
               console.log('🔍 Raw items from backend:', items.slice(0, 2)); // Log first 2 raw items
-              const mappedItems = items.map(mapServerItemToUI);
-              console.log('📦 Setting news state with', mappedItems.length, 'items');
-              console.log('📰 First mapped item:', mappedItems[0]);
-              console.log('📰 First item details:', {
-                hasTitle: !!mappedItems[0]?.title,
-                hasDescription: !!mappedItems[0]?.description,
-                descriptionLength: mappedItems[0]?.description?.length || 0,
-                description: mappedItems[0]?.description
-              });
-              setNews(mappedItems);
+              const mappedItems = items
+                .map(mapServerItemToUI)
+                .filter(item => item.title && item.title.trim() !== ''); // Filter out items without valid titles
+              
+              console.log('📦 Setting news state with', mappedItems.length, 'items (filtered from', items.length, 'raw items)');
+              
+              if (mappedItems.length > 0) {
+                console.log('📰 First mapped item:', mappedItems[0]);
+                console.log('📰 First item details:', {
+                  hasTitle: !!mappedItems[0]?.title,
+                  hasDescription: !!mappedItems[0]?.description,
+                  descriptionLength: mappedItems[0]?.description?.length || 0,
+                  description: mappedItems[0]?.description
+                });
+                setNews(mappedItems);
+              } else {
+                console.log('⚠️ All items filtered out (no valid titles), setting empty array');
+                setNews([]);
+              }
             } else {
               console.log('⚠️ No items to display, setting empty array');
               console.log('⚠️ This will trigger empty state UI');
@@ -395,7 +404,12 @@ const Dashboard = () => {
         
         const items = Array.isArray(body.data) ? body.data : body;
         if (items) {
-          setNews(items.map(mapServerItemToUI));
+          const mappedItems = items
+            .map(mapServerItemToUI)
+            .filter(item => item.title && item.title.trim() !== ''); // Filter out items without valid titles
+          
+          console.log('📦 Refresh: Setting', mappedItems.length, 'items (filtered from', items.length, 'raw items)');
+          setNews(mappedItems);
         }
       }
       
