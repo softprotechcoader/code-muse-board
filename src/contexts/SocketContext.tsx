@@ -41,10 +41,15 @@ interface SocketProviderProps {
   children: ReactNode;
 }
 
+// Singleton socket instance - survives HMR reloads
+let globalSocketInstance: Socket | null = null;
+
 /**
  * Provides all child components real-time communication state and emitters
  * via a React Context. Handles client connection/disconnection, subscribes
  * to server events, and keeps local state in sync as events occur.
+ * 
+ * Uses singleton pattern to maintain socket connection across HMR reloads.
  */
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -52,91 +57,127 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [userCount, setUserCount] = useState(0);
   const [recentNews, setRecentNews] = useState<any[]>([]);
   const [globalComments, setGlobalComments] = useState<any[]>([]);
+  
+  // Detect development mode
+  const isDevelopment = import.meta.env.DEV;
 
   // Establishes and manages websocket connection on mount
   useEffect(() => {
-    // Connect to backend with reconnection settings
-    const newSocket = io('http://localhost:3001', {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5,
-      autoConnect: true
-    });
+    // Reuse existing socket if available (prevents HMR disconnect)
+    if (globalSocketInstance && globalSocketInstance.connected) {
+      console.log('♻️ Reusing existing socket connection (HMR safe)');
+      setSocket(globalSocketInstance);
+      setIsConnected(true);
+      return;
+    }
 
-    // Connection event handlers
-    newSocket.on('connect', () => {
-      console.log('✅ Connected to real-time server');
-      setIsConnected(true);
-    });
-    
-    newSocket.on('disconnect', (reason) => {
-      console.log('⚠️ Disconnected from real-time server:', reason);
-      setIsConnected(false);
+    // Create new socket only if none exists
+    if (!globalSocketInstance) {
+      console.log('🔌 Creating new socket connection');
       
-      // Auto-reconnect if disconnect was not intentional
-      if (reason === 'io server disconnect') {
-        // Server initiated disconnect, try to reconnect
-        newSocket.connect();
+      const newSocket = io('http://localhost:3001', {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5,
+        autoConnect: true
+      });
+
+      // Connection event handlers
+      newSocket.on('connect', () => {
+        console.log('✅ Connected to real-time server');
+        setIsConnected(true);
+      });
+      
+      newSocket.on('disconnect', (reason) => {
+        console.log('⚠️ Disconnected from real-time server:', reason);
+        setIsConnected(false);
+        
+        // Auto-reconnect if disconnect was not intentional
+        if (reason === 'io server disconnect') {
+          // Server initiated disconnect, try to reconnect
+          newSocket.connect();
+        }
+      });
+      
+      newSocket.on('connect_error', (error) => {
+        console.error('❌ Connection error:', error.message);
+        setIsConnected(false);
+      });
+      
+      newSocket.on('reconnect', (attemptNumber) => {
+        console.log('🔄 Reconnected after', attemptNumber, 'attempts');
+        setIsConnected(true);
+      });
+      
+      newSocket.on('reconnect_attempt', (attemptNumber) => {
+        console.log('🔄 Reconnection attempt', attemptNumber);
+      });
+      
+      newSocket.on('reconnect_error', (error) => {
+        console.error('❌ Reconnection error:', error.message);
+      });
+      
+      newSocket.on('reconnect_failed', () => {
+        console.error('❌ Reconnection failed after all attempts');
+        setIsConnected(false);
+      });
+      
+      newSocket.on('user_count_update', (count) => setUserCount(count));
+      // News event handlers
+      newSocket.on('recent_news', (news) => setRecentNews(news));
+      newSocket.on('news_update', (newsItem) => setRecentNews(prev => [...prev, newsItem].slice(-20))); // Last 20 only
+      // Comments/chat event handlers
+      newSocket.on('recent_comments', (comments) => setGlobalComments(comments));
+      newSocket.on('new_comment', (comment) => setGlobalComments(prev => [...prev, comment].slice(-50))); // Last 50 only
+      // Presence/typing feedback
+      newSocket.on('user_joined', (userData) => {
+        console.log('User joined:', userData);
+      });
+      newSocket.on('user_left', (userData) => {
+        console.log('User left:', userData);
+      });
+      newSocket.on('user_reading_progress', (progress) => {
+        console.log('Reading progress update:', progress);
+      });
+      newSocket.on('user_typing', (data) => {
+        console.log('User typing:', data);
+      });
+      newSocket.on('user_stopped_typing', (data) => {
+        console.log('User stopped typing:', data);
+      });
+      
+      globalSocketInstance = newSocket;
+      setSocket(newSocket);
+    }
+    
+    // Only cleanup socket on actual page unload, not during HMR
+    const handleBeforeUnload = () => {
+      if (globalSocketInstance) {
+        console.log('🧹 Cleaning up socket connection (page unload)');
+        globalSocketInstance.close();
+        globalSocketInstance = null;
       }
-    });
-    
-    newSocket.on('connect_error', (error) => {
-      console.error('❌ Connection error:', error.message);
-      setIsConnected(false);
-    });
-    
-    newSocket.on('reconnect', (attemptNumber) => {
-      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
-      setIsConnected(true);
-    });
-    
-    newSocket.on('reconnect_attempt', (attemptNumber) => {
-      console.log('🔄 Reconnection attempt', attemptNumber);
-    });
-    
-    newSocket.on('reconnect_error', (error) => {
-      console.error('❌ Reconnection error:', error.message);
-    });
-    
-    newSocket.on('reconnect_failed', () => {
-      console.error('❌ Reconnection failed after all attempts');
-      setIsConnected(false);
-    });
-    
-    newSocket.on('user_count_update', (count) => setUserCount(count));
-    // News event handlers
-    newSocket.on('recent_news', (news) => setRecentNews(news));
-    newSocket.on('news_update', (newsItem) => setRecentNews(prev => [...prev, newsItem].slice(-20))); // Last 20 only
-    // Comments/chat event handlers
-    newSocket.on('recent_comments', (comments) => setGlobalComments(comments));
-    newSocket.on('new_comment', (comment) => setGlobalComments(prev => [...prev, comment].slice(-50))); // Last 50 only
-    // Presence/typing feedback
-    newSocket.on('user_joined', (userData) => {
-      console.log('User joined:', userData);
-    });
-    newSocket.on('user_left', (userData) => {
-      console.log('User left:', userData);
-    });
-    newSocket.on('user_reading_progress', (progress) => {
-      console.log('Reading progress update:', progress);
-    });
-    newSocket.on('user_typing', (data) => {
-      console.log('User typing:', data);
-    });
-    newSocket.on('user_stopped_typing', (data) => {
-      console.log('User stopped typing:', data);
-    });
-    setSocket(newSocket);
-    
-    // On unmount, cleanup socket
-    // Note: In development with HMR, this may disconnect/reconnect frequently
-    // This is expected behavior and socket will auto-reconnect
-    return () => {
-      console.log('🧹 Cleaning up socket connection (likely HMR)');
-      newSocket.close();
     };
+
+    // In development, keep socket alive during HMR
+    if (isDevelopment) {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        // Don't close socket in development (HMR will reuse it)
+      };
+    } else {
+      // In production, cleanup on unmount as normal
+      return () => {
+        if (globalSocketInstance) {
+          console.log('🧹 Cleaning up socket connection (component unmount)');
+          globalSocketInstance.close();
+          globalSocketInstance = null;
+        }
+      };
+    }
   }, []); // Empty dependency array ensures this only runs once on mount
 
   /** Emits a user_join event (with username/avatar) */

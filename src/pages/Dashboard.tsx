@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, ChevronRight, TrendingUp } from "lucide-react";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from "@/components/ui/pagination";
+import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, ChevronRight, TrendingUp, Activity, Users, MessageSquare, Newspaper } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 import { Calendar } from "@/components/ui/calendar";
@@ -99,11 +100,20 @@ const Dashboard = () => {
   const [categorySearch, setCategorySearch] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined); // undefined = no date filter
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showRealtime, setShowRealtime] = useState(false);
+  // Load showRealtime from localStorage, default to false
+  const [showRealtime, setShowRealtime] = useState(() => {
+    const saved = localStorage.getItem('showRealtime');
+    return saved ? JSON.parse(saved) : false;
+  });
   const [error, setError] = useState<string | null>(null);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
+  const itemsPerPage = 12; // Show 12 items per page
   const { toast } = useToast();
   // --- Socket context integration ---
-  const { isConnected, userCount, requestNewsRefresh, recentNews } = useSocket();
+  const { isConnected, userCount, requestNewsRefresh, recentNews, globalComments } = useSocket();
 
   // Global error handler
   useEffect(() => {
@@ -113,6 +123,24 @@ const Dashboard = () => {
     };
     window.addEventListener('error', handleError);
     return () => window.removeEventListener('error', handleError);
+  }, []);
+
+  // Persist showRealtime to localStorage
+  useEffect(() => {
+    localStorage.setItem('showRealtime', JSON.stringify(showRealtime));
+  }, [showRealtime]);
+
+  // Keyboard shortcuts for real-time toggle
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Ctrl/Cmd + R for toggling real-time
+      if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+        event.preventDefault();
+        setShowRealtime(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
 
   // Map backend/news item to UI NewsItem shape
@@ -142,7 +170,7 @@ const Dashboard = () => {
   // Load initial news from backend on mount and when filters change
   useEffect(() => {
     console.log('🚀 useEffect triggered - Starting news fetch');
-    console.log('🚀 Current state:', { selectedCategory, selectedSubcategory, selectedDate });
+    console.log('🚀 Current state:', { selectedCategory, selectedSubcategory, selectedDate, currentPage });
     
     let mounted = true;
     (async () => {
@@ -158,7 +186,8 @@ const Dashboard = () => {
           selectedCategory,
           selectedSubcategory,
           categoryToFilter,
-          selectedDate: selectedDate ? selectedDate.toISOString().split('T')[0] : 'none'
+          selectedDate: selectedDate ? selectedDate.toISOString().split('T')[0] : 'none',
+          page: currentPage
         });
         
         if (categoryToFilter && categoryToFilter !== 'All') {
@@ -167,6 +196,9 @@ const Dashboard = () => {
         if (selectedDate) {
           params.append('date', selectedDate.toISOString().split('T')[0]);
         }
+        // Add pagination parameters
+        params.append('page', currentPage.toString());
+        params.append('limit', itemsPerPage.toString());
         
         const url = `http://localhost:3001/api/news${params.toString() ? '?' + params.toString() : ''}`;
         console.log('🔍 Fetching news with URL:', url);
@@ -183,29 +215,37 @@ const Dashboard = () => {
             dataLength: body.data?.length,
             filters: body.filters,
             hasData: !!body.data,
-            isArray: Array.isArray(body.data)
+            isArray: Array.isArray(body.data),
+            totalPages: body.totalPages,
+            currentPage: body.currentPage
           });
           
           // API returns { status, results, totalPages, currentPage, data }
           const items = Array.isArray(body.data) ? body.data : (body.data ? [body.data] : []);
           console.log('📋 Items to process:', items.length);
           
-          if (mounted && items && items.length > 0) {
-            console.log('🔍 Raw items from backend:', items.slice(0, 2)); // Log first 2 raw items
-            const mappedItems = items.map(mapServerItemToUI);
-            console.log('📦 Setting news state with', mappedItems.length, 'items');
-            console.log('📰 First mapped item:', mappedItems[0]);
-            console.log('📰 First item details:', {
-              hasTitle: !!mappedItems[0]?.title,
-              hasDescription: !!mappedItems[0]?.description,
-              descriptionLength: mappedItems[0]?.description?.length || 0,
-              description: mappedItems[0]?.description
-            });
-            setNews(mappedItems);
-          } else if (mounted) {
-            console.log('⚠️ No items to display, setting empty array');
-            console.log('⚠️ This will trigger empty state UI');
-            setNews([]);
+          if (mounted) {
+            // Update pagination info
+            setTotalPages(body.totalPages || 1);
+            setTotalResults(body.results || 0);
+            
+            if (items && items.length > 0) {
+              console.log('🔍 Raw items from backend:', items.slice(0, 2)); // Log first 2 raw items
+              const mappedItems = items.map(mapServerItemToUI);
+              console.log('📦 Setting news state with', mappedItems.length, 'items');
+              console.log('📰 First mapped item:', mappedItems[0]);
+              console.log('📰 First item details:', {
+                hasTitle: !!mappedItems[0]?.title,
+                hasDescription: !!mappedItems[0]?.description,
+                descriptionLength: mappedItems[0]?.description?.length || 0,
+                description: mappedItems[0]?.description
+              });
+              setNews(mappedItems);
+            } else {
+              console.log('⚠️ No items to display, setting empty array');
+              console.log('⚠️ This will trigger empty state UI');
+              setNews([]);
+            }
           }
         } else {
           console.error('❌ Failed to fetch news:', res.status, res.statusText);
@@ -248,7 +288,7 @@ const Dashboard = () => {
       }
     })();
     return () => { mounted = false };
-  }, [selectedCategory, selectedSubcategory, selectedDate]);
+  }, [selectedCategory, selectedSubcategory, selectedDate, currentPage]);
 
   // Sync with real-time recentNews pushed by socket
   useEffect(() => {
@@ -308,6 +348,9 @@ const Dashboard = () => {
     setIsRefreshing(true);
     
     try {
+      // Reset to page 1 when refreshing
+      setCurrentPage(1);
+      
       // Build query parameters for filtering
       const params = new URLSearchParams();
       
@@ -321,6 +364,10 @@ const Dashboard = () => {
         params.append('date', selectedDate.toISOString().split('T')[0]);
       }
       
+      // Add pagination (page 1 for refresh)
+      params.append('page', '1');
+      params.append('limit', itemsPerPage.toString());
+      
       const url = `http://localhost:3001/api/news${params.toString() ? '?' + params.toString() : ''}`;
       console.log('🔄 Refreshing news with filters:', url);
       
@@ -331,6 +378,11 @@ const Dashboard = () => {
         const body = await res.json();
         console.log('✅ Refreshed news:', body.results, 'items');
         resultCount = body.results || 0;
+        
+        // Update pagination info
+        setTotalPages(body.totalPages || 1);
+        setTotalResults(body.results || 0);
+        
         const items = Array.isArray(body.data) ? body.data : body;
         if (items) {
           setNews(items.map(mapServerItemToUI));
@@ -493,11 +545,25 @@ const Dashboard = () => {
           </div>
           <div className="flex gap-2">
             <Button
-              variant="outline"
+              variant={showRealtime ? "default" : "outline"}
               size="sm"
               onClick={() => setShowRealtime(!showRealtime)}
+              className={cn(
+                "transition-all duration-300",
+                showRealtime && "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+              )}
             >
-              {showRealtime ? "Hide" : "Show"} Real-time
+              {showRealtime ? (
+                <>
+                  <Activity className="h-4 w-4 mr-2 animate-pulse" />
+                  Hide Real-time
+                </>
+              ) : (
+                <>
+                  <Activity className="h-4 w-4 mr-2" />
+                  Show Real-time
+                </>
+              )}
             </Button>
             <Button
               variant="outline"
@@ -586,6 +652,7 @@ const Dashboard = () => {
                 console.log('📂 Main Category dropdown changed to:', value);
                 setSelectedCategory(value);
                 setSelectedSubcategory(""); // Reset subcategory when main changes
+                setCurrentPage(1); // Reset to first page
               }}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select category" />
@@ -622,6 +689,7 @@ const Dashboard = () => {
                   onValueChange={(value) => {
                     // Handle the special "__all__" value
                     setSelectedSubcategory(value === "__all__" ? "" : value);
+                    setCurrentPage(1); // Reset to first page
                   }}
                 >
                   <SelectTrigger className="w-full">
@@ -669,7 +737,10 @@ const Dashboard = () => {
                   <Calendar
                     mode="single"
                     selected={selectedDate}
-                    onSelect={(date) => setSelectedDate(date)}
+                    onSelect={(date) => {
+                      setSelectedDate(date);
+                      setCurrentPage(1); // Reset to first page
+                    }}
                     initialFocus
                     className="pointer-events-auto"
                   />
@@ -954,13 +1025,17 @@ const Dashboard = () => {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredNews.map((item) => {
             // Truncate title and description for better card display
-            const shortTitle = item.title.length > 70 
-              ? item.title.substring(0, 70) + '...' 
-              : item.title;
+            // Add null/undefined checks to prevent errors
+            const title = item.title || 'Untitled';
+            const description = item.description || 'No description available';
+            
+            const shortTitle = title.length > 70 
+              ? title.substring(0, 70) + '...' 
+              : title;
             // Allow 3-4 lines of description (~200-250 characters)
-            const shortDescription = item.description.length > 250 
-              ? item.description.substring(0, 250) + '...' 
-              : item.description;
+            const shortDescription = description.length > 250 
+              ? description.substring(0, 250) + '...' 
+              : description;
             
             return (
           <Card 
@@ -1125,6 +1200,83 @@ const Dashboard = () => {
         </div>
       )}
 
+      {/* Pagination Controls */}
+      {!isLoadingNews && filteredNews.length > 0 && totalPages > 1 && (
+        <div className="flex flex-col items-center gap-4 mt-8">
+          <div className="text-sm text-muted-foreground">
+            Showing page {currentPage} of {totalPages} ({totalResults} total articles)
+          </div>
+          <Pagination>
+            <PaginationContent>
+              {/* Previous Button */}
+              <PaginationItem>
+                <PaginationPrevious 
+                  onClick={() => {
+                    if (currentPage > 1) {
+                      setCurrentPage(currentPage - 1);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  className={cn(
+                    currentPage === 1 && "pointer-events-none opacity-50"
+                  )}
+                />
+              </PaginationItem>
+
+              {/* Page Numbers */}
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+
+                return (
+                  <PaginationItem key={pageNum}>
+                    <PaginationLink
+                      onClick={() => {
+                        setCurrentPage(pageNum);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      isActive={currentPage === pageNum}
+                    >
+                      {pageNum}
+                    </PaginationLink>
+                  </PaginationItem>
+                );
+              })}
+
+              {/* Ellipsis for many pages */}
+              {totalPages > 5 && currentPage < totalPages - 2 && (
+                <PaginationItem>
+                  <PaginationEllipsis />
+                </PaginationItem>
+              )}
+
+              {/* Next Button */}
+              <PaginationItem>
+                <PaginationNext 
+                  onClick={() => {
+                    if (currentPage < totalPages) {
+                      setCurrentPage(currentPage + 1);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  className={cn(
+                    currentPage === totalPages && "pointer-events-none opacity-50"
+                  )}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+
       {/* AI Summary Dialog */}
       <Dialog open={!!selectedNews} onOpenChange={(open) => {
         if (!open) {
@@ -1197,11 +1349,101 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Real-time Features */}
+      {/* Real-time Features with Enhanced Animation */}
       {showRealtime && (
-        <div className="grid gap-6 md:grid-cols-2">
-          <RealtimeActivity />
-          <RealtimeChat />
+        <div className="space-y-4 animate-in slide-in-from-top-4 fade-in duration-500">
+          {/* Real-time Header */}
+          <Card className="border-green-500/30 bg-gradient-to-r from-green-500/5 to-emerald-500/5">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Activity className="h-6 w-6 text-green-500" />
+                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 animate-ping" />
+                    <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">Real-time Updates</CardTitle>
+                    <CardDescription className="flex items-center gap-2 mt-1">
+                      {isConnected ? (
+                        <>
+                          <Wifi className="h-3 w-3 text-green-500" />
+                          <span className="text-green-500 font-medium">Live • {userCount} users online</span>
+                        </>
+                      ) : (
+                        <>
+                          <WifiOff className="h-3 w-3 text-red-500" />
+                          <span className="text-red-500">Disconnected</span>
+                        </>
+                      )}
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowRealtime(false)}
+                  className="hover:bg-red-500/10"
+                >
+                  <X className="h-4 w-4 text-muted-foreground hover:text-red-500" />
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {/* Real-time Content Grid */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="animate-in slide-in-from-left-4 fade-in duration-500 delay-100">
+              <RealtimeActivity />
+            </div>
+            <div className="animate-in slide-in-from-right-4 fade-in duration-500 delay-200">
+              <RealtimeChat />
+            </div>
+          </div>
+
+          {/* Quick Stats Bar */}
+          <Card className="border-border/50">
+            <CardContent className="py-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-500/10">
+                    <Newspaper className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{recentNews.length}</p>
+                    <p className="text-xs text-muted-foreground">Recent Articles</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-500/10">
+                    <MessageSquare className="h-5 w-5 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{globalComments.length}</p>
+                    <p className="text-xs text-muted-foreground">Comments</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-green-500/10">
+                    <Users className="h-5 w-5 text-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{userCount}</p>
+                    <p className="text-xs text-muted-foreground">Online Users</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-orange-500/10">
+                    <Activity className="h-5 w-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{isConnected ? 'Live' : 'Offline'}</p>
+                    <p className="text-xs text-muted-foreground">Connection</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

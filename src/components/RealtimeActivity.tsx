@@ -49,20 +49,25 @@ const RealtimeActivity = () => {
     const newsActivities: ActivityItem[] = recentNews.map(news => ({
       id: `news-${news.id}`,
       type: 'news',
-      message: `New ${news.type} update: ${news.title}`,
-      timestamp: news.timestamp,
+      message: `New ${news.type || 'article'} update: ${news.title || 'Untitled'}`,
+      timestamp: news.timestamp || news.date || new Date().toISOString(),
       data: news
     }));
     // Comments as activity (joined with news and sorted by time)
     const commentActivities: ActivityItem[] = globalComments.map(comment => ({
       id: `comment-${comment.id}`,
       type: 'comment',
-      message: `${comment.author} commented: "${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}"`,
-      timestamp: comment.timestamp,
+      message: `${comment.author || 'Anonymous'} commented: "${(comment.text || '').substring(0, 50)}${(comment.text || '').length > 50 ? '...' : ''}"`,
+      timestamp: comment.timestamp || new Date().toISOString(),
       data: comment
     }));
     // Combine all and keep sorted by newest first
     const allActivities = [...newsActivities, ...commentActivities]
+      .filter(activity => {
+        // Filter out invalid timestamps
+        const date = new Date(activity.timestamp);
+        return !isNaN(date.getTime());
+      })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 20); // Only keep top 20
     setActivities(allActivities);
@@ -177,7 +182,17 @@ const RealtimeActivity = () => {
                           </Badge>
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="h-3 w-3" />
-                            {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
+                            {(() => {
+                              try {
+                                const date = new Date(activity.timestamp);
+                                if (isNaN(date.getTime())) {
+                                  return 'just now';
+                                }
+                                return formatDistanceToNow(date, { addSuffix: true });
+                              } catch {
+                                return 'just now';
+                              }
+                            })()}
                           </div>
                         </div>
                       </div>
