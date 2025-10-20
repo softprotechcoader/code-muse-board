@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, TrendingUp } from "lucide-react";
+import { ExternalLink, Github, BookOpen, Sparkles, Plus, Calendar as CalendarIcon, Filter, RefreshCw, Wifi, WifiOff, X, Search, ChevronDown, ChevronRight, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSocket } from "@/contexts/SocketContext";
 import { Calendar } from "@/components/ui/calendar";
@@ -191,9 +191,16 @@ const Dashboard = () => {
           console.log('📋 Items to process:', items.length);
           
           if (mounted && items && items.length > 0) {
+            console.log('🔍 Raw items from backend:', items.slice(0, 2)); // Log first 2 raw items
             const mappedItems = items.map(mapServerItemToUI);
             console.log('📦 Setting news state with', mappedItems.length, 'items');
-            console.log('📰 First item:', mappedItems[0]);
+            console.log('📰 First mapped item:', mappedItems[0]);
+            console.log('📰 First item details:', {
+              hasTitle: !!mappedItems[0]?.title,
+              hasDescription: !!mappedItems[0]?.description,
+              descriptionLength: mappedItems[0]?.description?.length || 0,
+              description: mappedItems[0]?.description
+            });
             setNews(mappedItems);
           } else if (mounted) {
             console.log('⚠️ No items to display, setting empty array');
@@ -945,73 +952,176 @@ const Dashboard = () => {
         </Card>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredNews.map((item) => (
-          <Card key={item.id} className="group overflow-hidden border-border bg-card transition-all hover:shadow-lg hover:shadow-primary/10">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <Badge 
-                  variant={item.category === 'Trending' ? 'default' : 'secondary'} 
-                  className={cn(
-                    "mb-2",
-                    item.category === 'Trending' && "bg-orange-500 hover:bg-orange-600 text-white"
-                  )}
-                >
-                  {item.category === 'Trending' && <TrendingUp className="h-3 w-3 mr-1" />}
-                  {item.category}
-                </Badge>
-                <span className="text-xs text-muted-foreground">{item.date}</span>
+          {filteredNews.map((item) => {
+            // Truncate title and description for better card display
+            const shortTitle = item.title.length > 70 
+              ? item.title.substring(0, 70) + '...' 
+              : item.title;
+            // Allow 3-4 lines of description (~200-250 characters)
+            const shortDescription = item.description.length > 250 
+              ? item.description.substring(0, 250) + '...' 
+              : item.description;
+            
+            return (
+          <Card 
+            key={item.id} 
+            className="group relative overflow-hidden border-border bg-card transition-all duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:scale-[1.02] flex flex-col cursor-pointer"
+          >
+            {/* Category Badge - Floating Top Right */}
+            <div className="absolute top-3 right-3 z-10">
+              <Badge 
+                variant={item.category === 'Trending' ? 'default' : 'secondary'} 
+                className={cn(
+                  "shadow-md",
+                  item.category === 'Trending' && "bg-gradient-to-r from-orange-500 to-red-500 text-white animate-pulse"
+                )}
+              >
+                {item.category === 'Trending' && <TrendingUp className="h-3 w-3 mr-1" />}
+                {item.category}
+              </Badge>
+            </div>
+
+            <CardHeader className="pb-4 space-y-3">
+              {/* Date */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <CalendarIcon className="h-3 w-3" />
+                <span>{item.date}</span>
               </div>
-              <CardTitle className="line-clamp-2">{item.title}</CardTitle>
-              <CardDescription className="line-clamp-3">{item.description}</CardDescription>
+              
+              {/* Title - Clickable to article */}
+              <a 
+                href={item.link} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block"
+              >
+                <CardTitle className="text-xl font-bold leading-tight group-hover:text-primary transition-colors line-clamp-2 cursor-pointer">
+                  {shortTitle}
+                </CardTitle>
+              </a>
+              
+              {/* Description */}
+              <CardDescription className="text-sm leading-relaxed line-clamp-4 text-muted-foreground/90">
+                {shortDescription}
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {item.docs && (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={item.docs} target="_blank" rel="noopener noreferrer">
-                      <BookOpen className="mr-1 h-3 w-3" />
-                      Docs
+            
+            <CardContent className="space-y-4 mt-auto pt-0">
+              {/* AI Summarizer - Most Prominent */}
+              <Button
+                variant="default"
+                size="default"
+                className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all group/btn"
+                onClick={() => handleSummarize(item)}
+              >
+                <Sparkles className="mr-2 h-4 w-4 group-hover/btn:animate-spin" />
+                Generate AI Summary
+                <ChevronRight className="ml-auto h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+              </Button>
+
+              {/* Divider */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">Official Links</span>
+                </div>
+              </div>
+              
+              {/* GitHub and Official Documentation Links */}
+              <div className="grid grid-cols-2 gap-2">
+                {item.github ? (
+                  <Button 
+                    variant="outline" 
+                    size="default"
+                    asChild
+                    className="border-2 border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/10 transition-all group/gh"
+                  >
+                    <a href={item.github} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
+                      <Github className="h-4 w-4 group-hover/gh:scale-110 transition-transform" />
+                      <span className="font-medium">GitHub</span>
                     </a>
                   </Button>
-                )}
-                {item.github && (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={item.github} target="_blank" rel="noopener noreferrer">
-                      <Github className="mr-1 h-3 w-3" />
-                      GitHub
-                    </a>
+                ) : (
+                  <Button 
+                    variant="outline" 
+                    size="default"
+                    disabled
+                    className="opacity-50 cursor-not-allowed"
+                  >
+                    <Github className="h-4 w-4 mr-2" />
+                    <span className="font-medium">GitHub</span>
                   </Button>
                 )}
-                {item.tutorial && (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={item.tutorial} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="mr-1 h-3 w-3" />
-                      Tutorial
+
+                {item.docs ? (
+                  <Button 
+                    variant="outline" 
+                    size="default"
+                    asChild
+                    className="border-2 border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 transition-all group/docs"
+                  >
+                    <a href={item.docs} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
+                      <BookOpen className="h-4 w-4 group-hover/docs:scale-110 transition-transform" />
+                      <span className="font-medium">Docs</span>
                     </a>
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="outline" 
+                    size="default"
+                    disabled
+                    className="opacity-50 cursor-not-allowed"
+                  >
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    <span className="font-medium">Docs</span>
                   </Button>
                 )}
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => handleSummarize(item)}
+
+              {/* Tutorial Link (if available) - Full Width */}
+              {item.tutorial && (
+                <Button 
+                  variant="outline" 
+                  size="default"
+                  asChild
+                  className="w-full border-2 border-green-500/30 hover:border-green-500 hover:bg-green-500/10 transition-all group/tut"
                 >
-                  <Sparkles className="mr-1 h-3 w-3" />
-                  Summarize
+                  <a href={item.tutorial} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2">
+                    <ExternalLink className="h-4 w-4 group-hover/tut:scale-110 transition-transform" />
+                    <span className="font-medium">View Tutorial</span>
+                  </a>
                 </Button>
+              )}
+
+              {/* Bottom Actions */}
+              <div className="flex gap-2 pt-2 border-t border-border">
                 <Button
-                  variant="secondary"
+                  variant="ghost"
                   size="sm"
+                  className="flex-1 hover:bg-primary/10"
                   onClick={() => handleAddToTracker(item)}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-4 w-4 mr-1" />
+                  Track
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  asChild
+                  className="flex-1 hover:bg-primary/10"
+                >
+                  <a href={item.link} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-1" />
+                    Read More
+                  </a>
                 </Button>
               </div>
             </CardContent>
           </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -47,16 +47,56 @@ async function fetchNewsFromSource(source) {
         const $element = $(element);
         const titleElement = $element.find(source.titleSelector).first();
         const linkElement = $element.find(source.linkSelector).first();
+        
         if (titleElement.length && linkElement.length) {
           const title = titleElement.text().trim();
           const link = linkElement.attr('href');
+          
+          // Extract description from multiple possible selectors
+          let description = '';
+          const descriptionSelectors = [
+            source.descriptionSelector, // Custom selector if provided
+            'p', // Common paragraph selector
+            '.excerpt', '.summary', '.description', // Common class names
+            '[data-description]', '[data-excerpt]' // Data attributes
+          ].filter(Boolean); // Remove undefined/null values
+          
+          // Try to find description
+          for (const selector of descriptionSelectors) {
+            const descElement = $element.find(selector).first();
+            if (descElement.length) {
+              const descText = descElement.text().trim();
+              if (descText && descText.length > 30) { // Ensure it's meaningful (3-4 lines needs ~30+ chars)
+                description = descText.length > 250 
+                  ? descText.substring(0, 250) + '...' 
+                  : descText;
+                break;
+              }
+            }
+          }
+          
+          // Fallback: try to get meta description or first paragraph text
+          if (!description) {
+            const firstPara = $element.find('p').first().text().trim();
+            if (firstPara && firstPara.length > 30) {
+              description = firstPara.length > 250 
+                ? firstPara.substring(0, 250) + '...' 
+                : firstPara;
+            }
+          }
+          
+          // Final fallback to source name
+          if (!description) {
+            description = `Latest news from ${source.name}`;
+          }
+          
           if (title && link) {
             // Ensure links are absolute
             const absoluteLink = link.startsWith('http') ? link : new URL(link, source.url).href;
             articles.push({
               id: `news-${source.name.toLowerCase()}-${Date.now()}-${index}`,
               title,
-              description: `Latest news from ${source.name}`,
+              description,
               link: absoluteLink,
               source: source.name,
               category: source.category,

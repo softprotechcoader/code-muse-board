@@ -61,6 +61,17 @@ router.get('/', async (req, res, next) => {
     // Log first article category if exists
     if (news.length > 0) {
       console.log('📰 Sample article categories:', news.slice(0, 3).map(n => ({ title: n.title.substring(0, 50), category: n.category })));
+      console.log('📰 First article full data:', {
+        id: news[0].id,
+        title: news[0].title.substring(0, 50),
+        hasDescription: !!news[0].description,
+        descriptionLength: news[0].description?.length || 0,
+        descriptionPreview: news[0].description?.substring(0, 100) || 'N/A',
+        category: news[0].category,
+        url: news[0].url,
+        docs: news[0].docs,
+        github: news[0].github
+      });
     } else {
       console.log('ℹ️ No articles found matching the filters');
     }

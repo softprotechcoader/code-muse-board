@@ -34,6 +34,7 @@ export const config = {
       selector: '.athing',
       titleSelector: '.titleline > a',
       linkSelector: '.titleline > a',
+      descriptionSelector: '.comment', // HN doesn't have descriptions in listings
       category: 'General',
       priority: 'high',
       enabled: true
@@ -44,6 +45,7 @@ export const config = {
       selector: 'article',
       titleSelector: 'h2 a',
       linkSelector: 'h2 a',
+      descriptionSelector: 'p', // GitHub repo descriptions
       category: 'Open Source',
       priority: 'high',
       enabled: true
