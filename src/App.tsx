@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import TrackerAI from "./pages/TrackerAI";
 import HistoryPage from "./pages/HistoryPage";
 import SkillUp from "./pages/SkillUpNew";
+import AIChat from "./pages/AIChat";
 import NotFound from "./pages/NotFound";
 import Layout from "./components/Layout";
 
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/tracker" element={<Layout><TrackerAI /></Layout>} />
             <Route path="/skillup" element={<Layout><SkillUp /></Layout>} />
             <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
+            <Route path="/ai-chat" element={<Layout><AIChat /></Layout>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
